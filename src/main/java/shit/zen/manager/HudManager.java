@@ -13,6 +13,7 @@ import shit.zen.hud.HudElement;
 import shit.zen.hud.KeyBindsHud;
 import shit.zen.hud.LieDetector;
 import shit.zen.hud.ModuleListHud;
+import shit.zen.hud.NotificationHud;
 import shit.zen.hud.PlayerListHud;
 import shit.zen.hud.PotionEffectsHud;
 import shit.zen.hud.TargetHud;
@@ -32,6 +33,7 @@ public class HudManager {
         this.registerHudElement(new PlayerListHud());
         this.registerHudElement(new PotionEffectsHud());
         this.registerHudElement(new LieDetector());
+        this.registerHudElement(new NotificationHud());
     }
 
     private void registerHudElement(HudElement hudElement) {

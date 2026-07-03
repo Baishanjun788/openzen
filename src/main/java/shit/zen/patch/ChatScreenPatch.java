@@ -30,7 +30,7 @@ public class ChatScreenPatch {
     }
 
     @Inject(method = "mouseClicked", desc = "(DDI)Z")
-    public static void onMouseClicked(double mouseX, double mouseY, int button, CallbackInfo callbackInfo) {
+    public static void onMouseClicked(ChatScreen screen, double mouseX, double mouseY, int button, CallbackInfo callbackInfo) {
         try {
             for (HudElement element : ZenClient.getInstance().getHudManager().getHudElements().stream().filter(Module::isEnabled).toList()) {
                 if (element.mousePressed((int) mouseX, (int) mouseY, button)) {

@@ -8,6 +8,7 @@ import lombok.Generated;
 import shit.zen.ClientBase;
 import shit.zen.ZenClient;
 import shit.zen.hud.ModuleListHud;
+import shit.zen.hud.NotificationHud;
 import shit.zen.modules.Category;
 import shit.zen.modules.KeyBind;
 import shit.zen.settings.Setting;
@@ -77,6 +78,7 @@ extends ClientBase {
             this.onDisable();
             ZenClient.getInstance().getEventBus().unregister(this);
         }
+        NotificationHud.notify(this, enabled);
     }
 
     public void toggle() {
