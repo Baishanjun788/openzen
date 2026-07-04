@@ -13,6 +13,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.Squid;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import shit.zen.event.EventTarget;
 import shit.zen.event.impl.EntityHurtEvent;
@@ -23,10 +24,8 @@ import shit.zen.utils.misc.SoundUtil;
 
 public class KillEffect extends Module {
 
-    // 原速度0.1，减速0.5倍 → 0.05 每tick上升格数
+    // 减速0.5倍参数
     private static final double RISE_SPEED = 0.05;
-    // 进度步长同步减半，总上升时长翻倍，高度依旧5格不变
-    // 原50tick，现在需要100tick完成上升，速度慢一半
     private static final double PERCENT_STEP = 0.01;
 
     private static final class SquidEffect {
@@ -38,10 +37,10 @@ public class KillEffect extends Module {
         }
     }
 
-    // 修复：使用实体UUID作为key，杜绝同名实体覆盖、玩家识别失效问题
+    // 缓存：受伤实体 -> 受伤时坐标（解决玩家死亡实体消失无法读取位置）
+    private final Map<UUID, Vec3> hurtPosCache = new HashMap<>();
+    // 旧追踪表兜底
     private final Map<UUID, LivingEntity> damagedByMe = new HashMap<>();
-
-    // 当前正在上升的假墨鱼列表
     private final List<SquidEffect> activeSquids = new ArrayList<>();
 
     public KillEffect() {
@@ -53,10 +52,12 @@ public class KillEffect extends Module {
         if (mc.player == null) return;
 
         LivingEntity target = event.entity();
-        // 攻击者是自己，且目标不是自己
+        // 攻击者是自己，目标不是自己
         if (event.damageSource().getEntity() == mc.player && target != mc.player) {
-            // 用唯一UUID存储，不会出现同名玩家覆盖
-            damagedByMe.put(target.getUUID(), target);
+            UUID uuid = target.getUUID();
+            damagedByMe.put(uuid, target);
+            // 关键：受伤瞬间保存坐标，玩家死后实体消失也能拿到位置
+            hurtPosCache.put(uuid, new Vec3(target.getX(), target.getY(), target.getZ()));
         }
     }
 
@@ -67,30 +68,47 @@ public class KillEffect extends Module {
             return;
         }
 
-        // 1. 遍历所有被我攻击过的实体，检测是否死亡
-        Iterator<Map.Entry<UUID, LivingEntity>> trackedIterator = damagedByMe.entrySet().iterator();
-        while (trackedIterator.hasNext()) {
-            Map.Entry<UUID, LivingEntity> entry = trackedIterator.next();
-            LivingEntity entity = entry.getValue();
+        // 1. 遍历受伤缓存，优先处理玩家（核心修复）
+        Iterator<Map.Entry<UUID, Vec3>> cacheIter = hurtPosCache.entrySet().iterator();
+        while (cacheIter.hasNext()) {
+            Map.Entry<UUID, Vec3> entry = cacheIter.next();
+            UUID uuid = entry.getKey();
+            Vec3 pos = entry.getValue();
+            LivingEntity target = damagedByMe.get(uuid);
 
-            // 实体已经被世界移除，直接清理记录
-            if (entity.isRemoved()) {
-                trackedIterator.remove();
-                continue;
+            boolean trigger = false;
+
+            // 情况A：实体还存在，正常死亡判定
+            if (target != null && !target.isRemoved()) {
+                if (target.isDeadOrDying() || target.getHealth() <= 0f) {
+                    trigger = true;
+                }
+            }
+            // 情况B：实体已经被移除（玩家死亡必走这里），直接触发特效
+            else {
+                trigger = true;
             }
 
-            // 统一死亡判定：血量<=0 / 死亡动画播放中，玩家和生物通用
-            boolean isDead = entity.isDeadOrDying() || entity.getHealth() <= 0f;
-
-            // 修复玩家失效问题：不再遍历玩家列表，玩家死亡/下线后 isDeadOrDying 会正常标记
-            if (isDead) {
-                // 生成升天鱿鱼，Y+1防止卡地面
-                spawnSquid(entity.getX(), entity.getY() + 1.0, entity.getZ());
-                trackedIterator.remove();
+            if (trigger) {
+                // 用受伤时保存的坐标生成鱿鱼
+                spawnSquid(pos.x, pos.y + 1.0, pos.z);
+                // 清理两条记录
+                damagedByMe.remove(uuid);
+                cacheIter.remove();
             }
         }
 
-        // 2. 更新所有上升鱿鱼动画
+        // 2. 清理残留失效实体（兜底防内存泄漏）
+        Iterator<Map.Entry<UUID, LivingEntity>> trackIter = damagedByMe.entrySet().iterator();
+        while (trackIter.hasNext()) {
+            Map.Entry<UUID, LivingEntity> entry = trackIter.next();
+            LivingEntity entity = entry.getValue();
+            if (entity.isRemoved()) {
+                trackIter.remove();
+            }
+        }
+
+        // 3. 更新上升鱿鱼动画
         Iterator<SquidEffect> squidIterator = activeSquids.iterator();
         while (squidIterator.hasNext()) {
             SquidEffect effect = squidIterator.next();
@@ -101,18 +119,14 @@ public class KillEffect extends Module {
                 continue;
             }
 
-            // 匀速增加进度
             if (effect.percent < 1.0) {
                 effect.percent += PERCENT_STEP;
             }
 
-            // 到达最高点，爆炸销毁鱿鱼
             if (effect.percent >= 1.0) {
                 double explosionY = squid.getY() + 0.5;
-                // 爆炸核心粒子
                 mc.level.addParticle(ParticleTypes.EXPLOSION, squid.getX(), explosionY, squid.getZ(), 0, 0, 0);
 
-                // 烟花火花+火焰粒子
                 for (int i = 0; i < 40; i++) {
                     double speedX = (Math.random() - 0.5) * 0.8;
                     double speedY = (Math.random() - 0.5) * 0.8;
@@ -121,14 +135,12 @@ public class KillEffect extends Module {
                     mc.level.addParticle(ParticleTypes.FLAME, squid.getX(), explosionY, squid.getZ(), speedX, speedY, speedZ);
                 }
 
-                // 清理假实体
                 squid.discard();
                 mc.level.removeEntity(squid.getId(), Entity.RemovalReason.DISCARDED);
                 squidIterator.remove();
                 continue;
             }
 
-            // 缓慢上升
             squid.setPos(squid.getX(), squid.getY() + RISE_SPEED, squid.getZ());
             squid.setDeltaMovement(0.0, RISE_SPEED, 0.0);
         }
@@ -138,7 +150,6 @@ public class KillEffect extends Module {
         SoundUtil.playSound("kill.wav", 1.0f);
 
         Squid squid = new Squid(EntityType.SQUID, mc.level);
-        // 随机负数假实体ID，避免和真实实体冲突
         int fakeEntityId = -114514 - (int) (Math.random() * 100000);
         squid.setId(fakeEntityId);
 
@@ -151,7 +162,6 @@ public class KillEffect extends Module {
         activeSquids.add(new SquidEffect(squid));
     }
 
-    // 清空所有特效
     private void clearEffects() {
         if (mc.level != null) {
             for (SquidEffect effect : activeSquids) {
@@ -161,6 +171,7 @@ public class KillEffect extends Module {
         }
         activeSquids.clear();
         damagedByMe.clear();
+        hurtPosCache.clear();
     }
 
     @Override
