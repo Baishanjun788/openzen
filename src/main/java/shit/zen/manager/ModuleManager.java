@@ -11,16 +11,7 @@ import shit.zen.event.impl.KeyEvent;
 import shit.zen.exception.ModuleNotFoundException;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
-import shit.zen.modules.impl.combat.AntiBots;
-import shit.zen.modules.impl.combat.AntiFireball;
-import shit.zen.modules.impl.combat.AntiKB;
-import shit.zen.modules.impl.combat.AutoOffHand;
-import shit.zen.modules.impl.combat.AutoSoup;
-import shit.zen.modules.impl.combat.AutoThrow;
-import shit.zen.modules.impl.combat.Backtrack;
-import shit.zen.modules.impl.combat.Critical;
-import shit.zen.modules.impl.combat.CrystalAura;
-import shit.zen.modules.impl.combat.KillAura;
+import shit.zen.modules.impl.combat.*;
 import shit.zen.modules.impl.exploit.Disabler;
 import shit.zen.modules.impl.exploit.FastPlace;
 import shit.zen.modules.impl.misc.AimAssist;
@@ -137,6 +128,7 @@ public class ModuleManager extends ClientBase {
         this.register(new AutoTools());
         this.register(new Debugger());
         this.register(new Teams());
+        this.register(new WTap());
         this.register(new WebUI());
     }
 

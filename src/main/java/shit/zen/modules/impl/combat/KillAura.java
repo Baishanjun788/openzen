@@ -28,7 +28,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.level.ClipContext; // 新增：用于射线检测墙壁
+import net.minecraft.world.level.ClipContext;
 import shit.zen.ClientBase;
 import shit.zen.ZenClient;
 import shit.zen.event.impl.PreMotionEvent;
@@ -39,6 +39,8 @@ import shit.zen.event.impl.WorldChangeEvent;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
 
+// 导入你的 WTap 模块，假定它在同包或者 combat 包下
+import shit.zen.modules.impl.combat.WTap;
 import shit.zen.modules.impl.combat.antikb.NoXZMode;
 import shit.zen.modules.impl.player.AntiTNT;
 import shit.zen.modules.impl.player.AntiWeb;
@@ -80,12 +82,11 @@ public class KillAura extends Module {
     public final BooleanSetting fakeAutoBlock   = new BooleanSetting("Fake AutoBlock", true);
     public final BooleanSetting test            = new BooleanSetting("Test", false);
 
-    // 穿墙配置 (新增)
+    // 穿墙配置
     public final BooleanSetting throughWalls    = new BooleanSetting("Through Walls", true);
 
     // 数值滑杆
     public final NumberSetting aimRange    = new NumberSetting("Aim Range", 4.0, 1.0, 6.0, 0.1);
-    // 新增：穿墙距离滑杆，只有在开启穿墙时才起作用（或者全局可用）
     public final NumberSetting wallRange   = new NumberSetting("Wall Range", 3.5, 1.0, 6.0, 0.1, () -> (Boolean) this.throughWalls.getValue());
 
     public final NumberSetting maxAps      = new NumberSetting("Max APS", 12.0, 1.0, 20.0, 1.0);
@@ -292,10 +293,6 @@ public class KillAura extends Module {
                 apsValue = this.maxAps.getValue().floatValue();
                 minApsValue = this.minAps.getValue().floatValue();
             }
-            if (this.keepSprint.getValue()) {
-                apsValue *= 2.0f;
-                minApsValue *= 2.0f;
-            }
             this.attacks += (float)(MathUtil.randomDouble(minApsValue, apsValue) / 20.0);
         } else if (this.sprintCounter > 0) {
             this.sprintCounter--;
@@ -340,12 +337,20 @@ public class KillAura extends Module {
         }
         if (this.multiAttack.getValue()) {
             int attacked = 0;
-            Rotation aimRot = RotationHandler.targetRotation;
             for (Entity entity : targetList) {
-                if (mc.player == null || aimRot == null) break;
-                // 这里检查是否能穿墙打，如果不能穿墙，由于被墙阻挡可能无法获取正确的HitDistance，但无政府通常直接信任客户端发出的包
-                if (RotationUtil.getHitDistance(entity, mc.player.getEyePosition(), aimRot) >= this.aimRange.getValue().floatValue()) continue;
+                if (mc.player == null) break;
+                RotationUtil.BestHitInfo subHit = RotationUtil.getBestHit(entity);
+                if (subHit == null) continue;
+
+                Rotation subRot = subHit.rotation();
+                if (RotationUtil.getHitDistance(entity, mc.player.getEyePosition(), subRot) >= this.aimRange.getValue().floatValue()) continue;
+
+                Rotation prevRot = RotationHandler.targetRotation;
+                RotationHandler.targetRotation = subRot;
+
                 this.attackEntity(entity);
+                RotationHandler.targetRotation = prevRot;
+
                 if (++attacked >= 2) break;
             }
         } else if (hitResult != null && hitResult.getType() == HitResult.Type.ENTITY) {
@@ -408,9 +413,6 @@ public class KillAura extends Module {
         return false;
     }
 
-    /**
-     * 修改后的合法性判断，加入了穿墙逻辑与独立穿墙距离
-     */
     public boolean isValidAttack(Entity entity) {
         if (mc.player == null) return false;
         if (!this.isValidTarget(entity)) return false;
@@ -418,12 +420,10 @@ public class KillAura extends Module {
             return false;
         }
 
-        // 计算玩家眼睛到实体碰撞箱最近点的距离
         Vec3 eyePos = mc.player.getEyePosition();
         Vec3 closestPoint = RotationUtil.closestPoint(eyePos, entity.getBoundingBox());
         double distance = closestPoint.distanceTo(eyePos);
 
-        // 检测是否有方块阻挡（视线检查）
         boolean isVisible = mc.level.clip(new ClipContext(
                 eyePos,
                 closestPoint,
@@ -433,16 +433,13 @@ public class KillAura extends Module {
         )).getType() == HitResult.Type.MISS;
 
         if (!isVisible) {
-            // 如果被墙挡住了
             if (!(Boolean) this.throughWalls.getValue()) {
-                return false; // 没开穿墙，直接过滤
+                return false;
             }
-            // 开了穿墙，检查是否在穿墙攻击距离内
             if (distance > this.wallRange.getValue().floatValue()) {
                 return false;
             }
         } else {
-            // 没被墙挡住，检查是否在常规攻击距离内
             if (distance > this.aimRange.getValue().floatValue()) {
                 return false;
             }
@@ -464,19 +461,19 @@ public class KillAura extends Module {
         }
 
         int attackKey = mc.options.keyAttack.getKey().getValue();
-        if (this.keepSprint.getValue()) {
-            if (this.sprintTickCounter % 2 == 0) {
-                mc.gameMode.attack(mc.player, entity);
-                ForgeHooksClient.onMouseButtonPre(attackKey, 1, 0);
-                mc.player.swing(InteractionHand.MAIN_HAND);
-                ForgeHooksClient.onMouseButtonPost(attackKey, 1, 0);
-            }
-        } else {
-            mc.gameMode.attack(mc.player, entity);
-            ForgeHooksClient.onMouseButtonPre(attackKey, 1, 0);
-            mc.player.swing(InteractionHand.MAIN_HAND);
-            ForgeHooksClient.onMouseButtonPost(attackKey, 1, 0);
+
+        // 执行伤害包交互
+        mc.gameMode.attack(mc.player, entity);
+        ForgeHooksClient.onMouseButtonPre(attackKey, 1, 0);
+        mc.player.swing(InteractionHand.MAIN_HAND);
+        ForgeHooksClient.onMouseButtonPost(attackKey, 1, 0);
+
+        // ================= W-TAP 联动核心 =================
+        // 判定 WTap 模块类单例是否存在且处于开启状态，若符合则在砍中人的当下分发命中时序信号
+        if (WTap.INSTANCE != null && WTap.INSTANCE.isEnabled()) {
+            WTap.INSTANCE.onAttackTarget();
         }
+        // =================================================
 
         if (this.morePart.getValue()) {
             mc.player.magicCrit(entity);
@@ -514,6 +511,12 @@ public class KillAura extends Module {
             possibleTargets.removeIf(KillAura::isNotBaby);
         }
         possibleTargets.sort(Comparator.comparing(KillAura::getCrystalPriority));
+
+        if (target != null && possibleTargets.contains(target)) {
+            possibleTargets.remove(target);
+            possibleTargets.add(0, target);
+        }
+
         if (this.infSwitch.getValue()) {
             return possibleTargets;
         }
@@ -541,6 +544,7 @@ public class KillAura extends Module {
     }
 
     private static double getAngleDiffToTarget(Entity entity) {
+        if (RotationHandler.targetRotation == null) return 360.0;
         return RotationUtil.angleDiff(RotationHandler.targetRotation.getYaw(), RotationUtil.entityRotation(entity).getYaw());
     }
 
