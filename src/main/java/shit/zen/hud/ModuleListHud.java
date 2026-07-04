@@ -166,7 +166,7 @@ public class ModuleListHud
 
         // 纯白半透明标题
         int titleColor = ColorUtil.fromARGB(255, 255, 255, 235);
-        String titleText = "Zen (" + mc.getFps() + "FPS)";
+        String titleText = "ZenAMX (" + mc.getFps() + "FPS)";
         GlHelper.drawTextShadowLegacy(titleText, baseX, baseY, this.titleFont, titleColor);
 
         // 🛠️ 修改点 1：如果你的 GlHelper 支持 getFontHeight()，直接用它。
@@ -176,13 +176,13 @@ public class ModuleListHud
         if (fontHeight < 9.0f) {
             fontHeight = 12.0f;
         }
-        float rowSpacing = fontHeight + 2.3f; // 🛠️ 适当增加字与字之间的空白间距（从 2.0f 改为 4.0f）
+        float rowSpacing = fontHeight + 1.2f; // 🛠️ 适当增加字与字之间的空白间距（从 2.0f 改为 4.0f）
 
         float titleHeight = (float) GlHelper.getFontAscent(this.titleFont);
         if (titleHeight < 9.0f) {
             titleHeight = 12.0f;
         }
-        float offsetY = titleHeight + 2.0f; // 🛠️ 标题和第一行模块名之间的间距调大，防止它们粘在一起
+        float offsetY = titleHeight + 1.0f; // 🛠️ 标题和第一行模块名之间的间距调大，防止它们粘在一起
 
         float maxWidth = GlHelper.getStringWidth(titleText, this.titleFont);
 
