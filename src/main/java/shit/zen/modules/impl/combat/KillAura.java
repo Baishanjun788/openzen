@@ -38,6 +38,7 @@ import shit.zen.event.impl.TickEvent;
 import shit.zen.event.impl.WorldChangeEvent;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
+
 import shit.zen.modules.impl.combat.antikb.NoXZMode;
 import shit.zen.modules.impl.player.AntiTNT;
 import shit.zen.modules.impl.player.AntiWeb;

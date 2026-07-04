@@ -131,6 +131,7 @@ public class ModuleManager extends ClientBase {
         this.register(new XRay());
         this.register(new SwordNotifier());
         this.register(new AntiStaff());
+        this.register(new KillEffect());
         this.register(new AutoPlay());
         this.register(new AutoTools());
         this.register(new Debugger());
