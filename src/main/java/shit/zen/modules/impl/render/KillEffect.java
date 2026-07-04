@@ -8,37 +8,21 @@ import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.Squid;
 
 import shit.zen.event.EventTarget;
-import shit.zen.event.impl.EntityHurtEvent;
 import shit.zen.event.impl.TickEvent;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
 import shit.zen.utils.misc.SoundUtil;
 
-/**
- * 移植自 LiquidBounce 的 KillEffect（原注释：仿制"木糖醇"客户端的击杀特效）。
- *
- * v2 修复说明（上一版完全不生效的原因）：
- * 1. 上一版用 EntityRemoveEvent 来判断"实体是否死亡"，但查了 PlayerPatch.java 才发现，
- *    这个事件其实是在本地玩家调用 Player.attack() 的前后触发的（dead=false 攻击前，
- *    dead=true 攻击后），跟目标实际死没死完全没关系，纯粹是命名有误导性，从一开始
- *    条件就没写对。
- * 2. 现在改成更直接、不依赖任何自定义事件语义的办法：被打过的实体直接用 UUID 存进一个
- *    Map 里持有引用，每 tick 检查它是不是真的从世界里消失了（entity.isRemoved()，
- *    这是原版 Minecraft Entity 自带的方法，跟任何自定义事件无关，不会判断错）。
- *
- * 另外提醒：这个文件本身只是加进项目里，还需要你自己在 ModuleManager 里加一行
- *     this.register(new KillEffect());
- * 并且默认是关闭的，进游戏后要去 ClickGui 里手动点开才会生效。
- */
 public class KillEffect extends Module {
 
-    private static final double RISE_SPEED = 0.21145; // 原版上升速度，直接照搬
-    private static final double PERCENT_STEP_MAX = 0.048; // 每 tick 上升进度最大随机增量，原版数值
+    private static final double RISE_SPEED = 0.21145;
+    private static final double PERCENT_STEP_MAX = 0.048;
 
     private static final class SquidEffect {
         final Squid squid;
@@ -49,64 +33,53 @@ public class KillEffect extends Module {
         }
     }
 
-    // 被我打过、还没确认死亡的实体：UUID -> 实体引用
-    private final Map<UUID, LivingEntity> damagedByMe = new HashMap<>();
-    // 当前正在上升/等待爆炸的假墨鱼列表，支持同时存在多只
+    // 记录上一 tick 还在视野内的活物：UUID -> 实体引用
+    private final Map<UUID, LivingEntity> knownEntities = new HashMap<>();
+
+    // 当前正在上升的假墨鱼列表
     private final List<SquidEffect> activeSquids = new ArrayList<>();
 
     public KillEffect() {
         super("KillEffect", Category.RENDER);
     }
 
-    /**
-     * 只要伤害来源是自己，就把这个实体记下来（持有引用，方便之后检查它是否被移除）。
-     */
-    @EventTarget
-    public void onEntityHurt(EntityHurtEvent event) {
-        if (mc.player == null) {
-            return;
-        }
-        if (event.damageSource().getEntity() == mc.player) {
-            this.damagedByMe.put(event.entity().getUUID(), event.entity());
-        }
-    }
-
-    /**
-     * 每 tick 检查"被我打过"的实体是不是已经真正从世界里消失了（isRemoved）。
-     * 消失了就认为是被打死了，触发特效；如果它还活着就继续留在集合里等下一次检查。
-     */
     @EventTarget
     public void onTick(TickEvent event) {
-        if (mc.level == null) {
-            for (SquidEffect effect : this.activeSquids) {
-                effect.squid.discard();
-            }
-            this.activeSquids.clear();
-            this.damagedByMe.clear();
+        if (mc.level == null || mc.player == null) {
+            clearEffects();
             return;
         }
 
-        // 检查是否有目标真正死亡：
-        // - 怪物：死亡后会被移除，isRemoved() 会变 true
-        // - 玩家：死亡后通常不会被移除（会保持死亡姿势直到重生），要用血量/死亡状态来判断
-        // 两个条件谁先满足就算死亡，避免玩家被打死后一直卡在集合里不触发
-        Iterator<Map.Entry<UUID, LivingEntity>> trackedIterator = this.damagedByMe.entrySet().iterator();
-        while (trackedIterator.hasNext()) {
-            Map.Entry<UUID, LivingEntity> entry = trackedIterator.next();
-            LivingEntity livingEntity = entry.getValue();
+        // 1. 检查上一 tick 记录的实体，有没有在这一 tick 死掉的
+        Iterator<Map.Entry<UUID, LivingEntity>> knownIterator = this.knownEntities.entrySet().iterator();
+        while (knownIterator.hasNext()) {
+            LivingEntity entity = knownIterator.next().getValue();
 
-            boolean isDead = livingEntity.isRemoved()
-                    || livingEntity.isDeadOrDying()
-                    || livingEntity.getHealth() <= 0.0f;
-            if (!isDead) {
+            // 如果实体已经死亡，或者血量归零 (即使还没被立刻从世界移除)
+            if (entity.isDeadOrDying() || entity.getHealth() <= 0.0f) {
+                // 在它死亡的位置生成飞升鱿鱼
+                this.spawnSquid(entity.getX(), entity.getY(), entity.getZ());
+                knownIterator.remove();
                 continue;
             }
 
-            trackedIterator.remove();
-            this.spawnSquid(livingEntity.getX(), livingEntity.getY(), livingEntity.getZ());
+            // 如果实体因为距离过远被卸载(isRemoved)但没死，单纯移出记录即可
+            if (entity.isRemoved()) {
+                knownIterator.remove();
+            }
         }
 
-        // 推进所有正在上升的假墨鱼
+        // 2. 将当前视野内还活着的实体加入记录，留给下一 tick 检查
+        // 遍历所有客户端渲染的实体（包括玩家和怪物）
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (entity instanceof LivingEntity living && living != mc.player) {
+                if (!living.isDeadOrDying() && living.getHealth() > 0.0f) {
+                    this.knownEntities.put(living.getUUID(), living);
+                }
+            }
+        }
+
+        // 3. 推进所有正在上升的假墨鱼
         Iterator<SquidEffect> squidIterator = this.activeSquids.iterator();
         while (squidIterator.hasNext()) {
             SquidEffect effect = squidIterator.next();
@@ -122,22 +95,27 @@ public class KillEffect extends Module {
             }
 
             if (effect.percent >= 1.0) {
-                // 上升结束：原地炸开一圈火焰粒子，然后移除这只假墨鱼
+                // 上升结束：原地炸开一圈火焰粒子
                 for (int i = 0; i < 8; i++) {
                     mc.level.addParticle(
                             ParticleTypes.FLAME,
-                            squid.getX(), squid.getY(), squid.getZ(),
+                            squid.getX(), squid.getY() + 0.5, squid.getZ(),
                             (Math.random() - 0.5) * 0.2,
                             Math.random() * 0.2,
                             (Math.random() - 0.5) * 0.2
                     );
                 }
+
+                // 彻底从客户端清理假实体
                 squid.discard();
+                mc.level.removeEntity(squid.getId(), Entity.RemovalReason.DISCARDED);
+
                 squidIterator.remove();
                 continue;
             }
 
-            // 保持持续上升
+            // 强制修改 Y 轴坐标，无视物理引擎
+            squid.setPos(squid.getX(), squid.getY() + RISE_SPEED, squid.getZ());
             squid.setDeltaMovement(0.0, RISE_SPEED, 0.0);
         }
     }
@@ -146,21 +124,35 @@ public class KillEffect extends Module {
         SoundUtil.playSound("kill.wav", 1.0f);
 
         Squid squid = new Squid(EntityType.SQUID, mc.level);
+
+        // 强制分配假实体 ID，防止冲突
+        int fakeEntityId = -114514 - (int)(Math.random() * 100000);
+        squid.setId(fakeEntityId);
+
         squid.setPos(x, y, z);
-        squid.setDeltaMovement(0.0, RISE_SPEED, 0.0);
         squid.setNoGravity(true);
         squid.setInvulnerable(true);
-        mc.level.addFreshEntity(squid);
+        squid.setYRot(mc.player.getYRot());
+
+        // 【关键修复】：1.20 官方映射下，往客户端塞假实体用 putNonPlayerEntity
+        mc.level.putNonPlayerEntity(squid.getId(), squid);
 
         this.activeSquids.add(new SquidEffect(squid));
     }
 
-    @Override
-    public void onDisable() {
-        for (SquidEffect effect : this.activeSquids) {
-            effect.squid.discard();
+    private void clearEffects() {
+        if (mc.level != null) {
+            for (SquidEffect effect : this.activeSquids) {
+                effect.squid.discard();
+                mc.level.removeEntity(effect.squid.getId(), Entity.RemovalReason.DISCARDED);
+            }
         }
         this.activeSquids.clear();
-        this.damagedByMe.clear();
+        this.knownEntities.clear();
+    }
+
+    @Override
+    public void onDisable() {
+        clearEffects();
     }
 }
