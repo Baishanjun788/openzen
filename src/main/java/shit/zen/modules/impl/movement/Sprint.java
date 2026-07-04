@@ -23,13 +23,24 @@ public class Sprint extends Module {
             return;
         }
 
+        // 1. 判断是否按下了任意移动键
+        boolean isMoving = mc.options.keyUp.isDown()
+                || mc.options.keyDown.isDown()
+                || mc.options.keyLeft.isDown()
+                || mc.options.keyRight.isDown();
+
+        // 2. Telly 桥核心修正：只要大前提满足（饥饿度够、没有蹲、没有用物品），并且在移动就允许保持疾跑意图
+        // 剔除原本严格的 onGround 限制，允许在空中跳跃阶段、倒退转体阶段延续疾跑状态
         boolean canSprint = mc.player.getFoodData().getFoodLevel() > 6
                 && !mc.player.isCrouching()
                 && !mc.player.isUsingItem()
-                && mc.player.onGround() || mc.player.isInWater()
-                && (mc.options.keyUp.isDown() || mc.options.keyDown.isDown()
-                || mc.options.keyLeft.isDown() || mc.options.keyRight.isDown());
+                && isMoving;
 
-        KeyMapping.set(mc.options.keySprint.getKey(), canSprint);
+        if (canSprint) {
+            // 如果满足疾跑条件，强制客户端激活疾跑状态
+            mc.player.setSprinting(true);
+            // 同时激活原版快捷键状态，确保发包和运动属性同步
+            KeyMapping.set(mc.options.keySprint.getKey(), true);
+        }
     }
 }
