@@ -28,7 +28,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.ClipContext; // 新增：用于射线检测墙壁
 import shit.zen.ClientBase;
 import shit.zen.ZenClient;
 import shit.zen.event.impl.PreMotionEvent;
@@ -76,19 +76,21 @@ public class KillAura extends Module {
     public final BooleanSetting morePart        = new BooleanSetting("More Particles", false);
     public final BooleanSetting keepSprint      = new BooleanSetting("Keep Sprint", true);
     public final BooleanSetting ignoreSkipTicks = new BooleanSetting("Ignore skip ticks", false);
-    public final BooleanSetting fakeAutoBlock   = new BooleanSetting("Fake AutoBlock", true); // 保留你的视觉开关
+    public final BooleanSetting fakeAutoBlock   = new BooleanSetting("Fake AutoBlock", true);
     public final BooleanSetting test            = new BooleanSetting("Test", false);
 
-    // 穿墙配置
+    // 穿墙配置 (新增)
     public final BooleanSetting throughWalls    = new BooleanSetting("Through Walls", true);
 
     // 数值滑杆
     public final NumberSetting aimRange    = new NumberSetting("Aim Range", 4.0, 1.0, 6.0, 0.1);
+    // 新增：穿墙距离滑杆，只有在开启穿墙时才起作用（或者全局可用）
     public final NumberSetting wallRange   = new NumberSetting("Wall Range", 3.5, 1.0, 6.0, 0.1, () -> (Boolean) this.throughWalls.getValue());
 
     public final NumberSetting maxAps      = new NumberSetting("Max APS", 12.0, 1.0, 20.0, 1.0);
     public final NumberSetting minAps      = new NumberSetting("Min APS", 9.0, 1.0, 20.0, 1.0);
-    public final NumberSetting switchSize  = new NumberSetting("Switch Size", 1.0, 1.0, 5.0, 1.0, () -> !(Boolean) this.infSwitch.getValue());
+    public final NumberSetting switchSize  = new NumberSetting("Switch Size", 1.0, 1.0, 5.0, 1.0,
+            () -> !(Boolean) this.infSwitch.getValue());
     public final NumberSetting switchDelay = new NumberSetting("Switch Delay (Attack Times)", 1.0, 1.0, 10.0, 1.0);
     public final NumberSetting fov         = new NumberSetting("FoV", 360.0, 10.0, 360.0, 1.0);
     public final NumberSetting hurtTime    = new NumberSetting("Hurt Time", 10.0, 0.0, 10.0, 1.0);
@@ -100,7 +102,6 @@ public class KillAura extends Module {
     private RotationUtil.BestHitInfo currentBestHit;
     private RotationUtil.BestHitInfo prevBestHit;
     private int attackTimes;
-    private long lastAttackTime; // 🛠️ 改用毫秒级高精度系统时间戳控制发包
     private float attacks;
     private int targetIndex;
     public int sprintTickCounter;
@@ -120,7 +121,6 @@ public class KillAura extends Module {
         target = null;
         aimingTarget = null;
         targetList.clear();
-        this.lastAttackTime = System.currentTimeMillis();
         super.onEnable();
     }
 
@@ -197,6 +197,8 @@ public class KillAura extends Module {
                         base.minX, base.minY + entity.getEyeHeight() + 0.11, base.minZ,
                         base.maxX, base.maxY - 0.13, base.maxZ);
                 RenderUtil.drawFilledColoredBox(band, poseStack, color, color);
+            }
+            default -> {
             }
         }
         poseStack.popPose();
@@ -276,14 +278,28 @@ public class KillAura extends Module {
             this.targetIndex = 0;
         }
         target = targetList.get(this.targetIndex);
-
-        // 🛠️ 核心修复：1.8延迟机制改由PreMotion高精度微秒级判断，Tick中仅用于非1.8模式的减量
-        if (!this.delayMode.is("1.8")) {
-            if (this.sprintCounter > 0) {
-                this.sprintCounter--;
-            } else if (mc.player.getAttackStrengthScale(0.0f) >= 0.9f) {
-                this.doAttack();
+        if (this.delayMode.is("1.8")) {
+            float apsValue;
+            float minApsValue;
+            if (NoXZMode.isAttacking) {
+                int kbAttackAmount = AntiKB.INSTANCE != null
+                        ? AntiKB.INSTANCE.attackAmount.getValue().intValue()
+                        : 0;
+                apsValue = this.maxAps.getValue().floatValue() - kbAttackAmount;
+                minApsValue = this.minAps.getValue().floatValue() - kbAttackAmount;
+            } else {
+                apsValue = this.maxAps.getValue().floatValue();
+                minApsValue = this.minAps.getValue().floatValue();
             }
+            if (this.keepSprint.getValue()) {
+                apsValue *= 2.0f;
+                minApsValue *= 2.0f;
+            }
+            this.attacks += (float)(MathUtil.randomDouble(minApsValue, apsValue) / 20.0);
+        } else if (this.sprintCounter > 0) {
+            this.sprintCounter--;
+        } else if (mc.player.getAttackStrengthScale(0.0f) >= 0.9f) {
+            this.doAttack();
         }
     }
 
@@ -294,36 +310,12 @@ public class KillAura extends Module {
             this.attacks = 0.0f;
             return;
         }
-
         if (mc.player.getUseItem().isEmpty()
                 && mc.screen == null
                 && (this.ignoreSkipTicks.getValue() || ClientBase.delayPackets.isEmpty())) {
-
-            if (this.delayMode.is("1.8")) {
-                // 🛠️ 使用系统高精度毫秒替代原本粗暴的 `attacks += float / 20`
-                // 这样能做到 APS 曲线绝对平滑，并且绝不会在同一个 PreMotion 帧内重复发包导致被反作弊吞掉
-                float apsValue = this.maxAps.getValue().floatValue();
-                float minApsValue = this.minAps.getValue().floatValue();
-
-                if (NoXZMode.isAttacking) {
-                    int kbAttackAmount = AntiKB.INSTANCE != null ? AntiKB.INSTANCE.attackAmount.getValue().intValue() : 0;
-                    apsValue -= kbAttackAmount;
-                    minApsValue -= kbAttackAmount;
-                }
-
-                double randomAps = MathUtil.randomDouble(minApsValue, apsValue);
-                long targetDelay = (long) (1000.0 / randomAps);
-
-                if (System.currentTimeMillis() - this.lastAttackTime >= targetDelay) {
-                    this.doAttack();
-                    this.lastAttackTime = System.currentTimeMillis();
-                }
-            } else {
-                // 非 1.8 模式保持原版逻辑
-                while (this.attacks >= 1.0f) {
-                    this.doAttack();
-                    this.attacks -= 1.0f;
-                }
+            while (this.attacks >= 1.0f) {
+                this.doAttack();
+                this.attacks -= 1.0f;
             }
         } else {
             this.attacks = 0.0f;
@@ -350,6 +342,7 @@ public class KillAura extends Module {
             Rotation aimRot = RotationHandler.targetRotation;
             for (Entity entity : targetList) {
                 if (mc.player == null || aimRot == null) break;
+                // 这里检查是否能穿墙打，如果不能穿墙，由于被墙阻挡可能无法获取正确的HitDistance，但无政府通常直接信任客户端发出的包
                 if (RotationUtil.getHitDistance(entity, mc.player.getEyePosition(), aimRot) >= this.aimRange.getValue().floatValue()) continue;
                 this.attackEntity(entity);
                 if (++attacked >= 2) break;
@@ -414,6 +407,9 @@ public class KillAura extends Module {
         return false;
     }
 
+    /**
+     * 修改后的合法性判断，加入了穿墙逻辑与独立穿墙距离
+     */
     public boolean isValidAttack(Entity entity) {
         if (mc.player == null) return false;
         if (!this.isValidTarget(entity)) return false;
@@ -421,10 +417,12 @@ public class KillAura extends Module {
             return false;
         }
 
+        // 计算玩家眼睛到实体碰撞箱最近点的距离
         Vec3 eyePos = mc.player.getEyePosition();
         Vec3 closestPoint = RotationUtil.closestPoint(eyePos, entity.getBoundingBox());
         double distance = closestPoint.distanceTo(eyePos);
 
+        // 检测是否有方块阻挡（视线检查）
         boolean isVisible = mc.level.clip(new ClipContext(
                 eyePos,
                 closestPoint,
@@ -434,13 +432,16 @@ public class KillAura extends Module {
         )).getType() == HitResult.Type.MISS;
 
         if (!isVisible) {
+            // 如果被墙挡住了
             if (!(Boolean) this.throughWalls.getValue()) {
-                return false;
+                return false; // 没开穿墙，直接过滤
             }
+            // 开了穿墙，检查是否在穿墙攻击距离内
             if (distance > this.wallRange.getValue().floatValue()) {
                 return false;
             }
         } else {
+            // 没被墙挡住，检查是否在常规攻击距离内
             if (distance > this.aimRange.getValue().floatValue()) {
                 return false;
             }
