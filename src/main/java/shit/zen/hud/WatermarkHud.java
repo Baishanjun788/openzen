@@ -14,8 +14,8 @@ import shit.zen.render.FontRenderer;
 import shit.zen.render.Paint;
 
 public class WatermarkHud
-extends ClientBase
-implements IHudElement {
+        extends ClientBase
+        implements IHudElement {
     private static final FontRenderer logoFont = FontPresets.zenIcon(36.0f);
     private static final FontRenderer subFont = FontPresets.poppinsMedium(12.0f);
     private static final int primaryColor = new Color(170, 170, 170).getRGB();
@@ -70,13 +70,13 @@ implements IHudElement {
         int subColor = this.colorWithAlpha(primaryColor, alpha);
         int shadow = this.colorWithAlpha(shadowColor, alpha);
         try (Paint paint = new Paint()){
-            this.drawText(drawContext, paint, "Z", drawX, centerY + 4.0f, logoFont, b1Width, textColor, shadow, true);
+            this.drawText(drawContext, paint, "N", drawX, centerY + 4.0f, logoFont, b1Width, textColor, shadow, true);
             drawX += logoCharWidth + 12.0f;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
             float betaX = (drawX += separatorCharWidth + 12.0f) + (sep1Width - betaRawWidth) / 2.0f - 13.0f;
             float b1X = drawX + (sep1Width - b1RawWidth) / 2.0f - 13.0f;
-            this.drawText(drawContext, paint, "beta", betaX, centerY - 2.0f, subFont, 0.0f, textColor, shadow, false);
-            this.drawText(drawContext, paint, "b1", b1X, centerY + 7.0f, subFont, 0.0f, subColor, shadow, false);
+            this.drawText(drawContext, paint, "newzamx", betaX, centerY - 2.0f, subFont, 0.0f, textColor, shadow, false);
+            this.drawText(drawContext, paint, "v20", b1X, centerY + 7.0f, subFont, 0.0f, subColor, shadow, false);
             drawX += sep1Width;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
             float line1X = (drawX += separatorCharWidth + 12.0f) + (this.maxSubWidth - this.line1Width) / 2.0f - 13.0f;
@@ -112,8 +112,15 @@ implements IHudElement {
         if (mc.isSingleplayer()) {
             return new String[]{"Singleplayer", "1ms"};
         }
+
         ServerData serverData = mc.getCurrentServer();
         String serverIp = serverData != null ? serverData.ip : "Multiplayer";
+
+        // 核心修改逻辑：隐藏特定IP，替换为 127.0.0.1
+        if (serverIp != null && serverIp.contains("118.31.71.254")) {
+            serverIp = serverIp.replace("118.31.71.254", "127.0.0.1");
+        }
+
         int ping = 0;
         if (mc.getConnection() != null && mc.player != null && (playerInfo = mc.getConnection().getPlayerInfo(mc.player.getUUID())) != null) {
             ping = playerInfo.getLatency();

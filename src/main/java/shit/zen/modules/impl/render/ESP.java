@@ -91,7 +91,6 @@ public class ESP extends Module {
         try {
             // 这里假设你的配置文件存在于游戏目录下的 "zen" 文件夹中
             // 如果你的 ConfigManager 用的是别的名字，请把 "zen" 改成对应的文件夹名
-            //  File file = new File(mc.gameDirectory, "zen/chenqiyuan.png");
             File file = new File(ConfigManager.CONFIG_DIR, "chenqiyuan.png");
             if (file.exists()) {
                 InputStream is = Files.newInputStream(file.toPath());
@@ -222,9 +221,21 @@ public class ESP extends Module {
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder buffer = tesselator.getBuilder();
 
+        // 获取 SwordNotifier 实例及其状态
+        SwordNotifier swordNotifier = SwordNotifier.INSTANCE;
+        boolean isSwordNotifierEnabled = swordNotifier != null && swordNotifier.isEnabled();
+
         for (Entity entity : mc.level.entitiesForRendering()) {
             // 只渲染玩家头部
             if (!(entity instanceof Player player) || player == mc.player) continue;
+
+            // 🌟 核心修改逻辑：联动 SwordNotifier
+            if (isSwordNotifierEnabled) {
+                // 如果 SwordNotifier 开启，且该玩家未被标记，则跳过渲染
+                if (!swordNotifier.isMarked(player.getGameProfile().getName())) {
+                    continue;
+                }
+            }
 
             // 保持你原本的高度：头部中心大概在 y + 高度 - 0.25 的位置
             double x = Mth.lerp(partial, player.xOld, player.getX()) - camPos.x;

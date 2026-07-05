@@ -4,12 +4,16 @@ import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import com.mojang.datafixers.util.Pair;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.phys.Vec3;
 import shit.zen.event.EventTarget;
 import shit.zen.event.impl.PacketEvent;
 import shit.zen.event.impl.Render2DEvent;
@@ -19,8 +23,11 @@ import shit.zen.modules.Module;
 import shit.zen.render.FontStore;
 import shit.zen.settings.impl.BooleanSetting;
 
+import java.awt.Color;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,18 +44,20 @@ public class SwordNotifier extends Module {
     public final BooleanSetting soundAlert = new BooleanSetting("Sound Alert", true);
     // 🌟 原版光灵箭透视高亮
     public final BooleanSetting nativeGlow = new BooleanSetting("Native Glow", true);
+    // 🌟 发现目标时本地劈雷（视觉特效）
+    public final BooleanSetting strikeLightning = new BooleanSetting("Strike Lightning", true);
 
     private final Set<String> markedPlayerNames = new HashSet<>();
     private final Set<String> alertedPlayerNames = new HashSet<>();
+
+    // 异步安全的位置队列，用于在主线程生成闪电
+    private final List<Vec3> lightningQueue = new CopyOnWriteArrayList<>();
 
     private int textIndex = 0;
     private String pendingMessage = "";
     private long retryTime = 0;
 
-    // 用于精准控制声音频率的 Tick 计数器 (Minecraft 固定 20 TPS)
     private int tickCounter = 0;
-
-    // 缓存最近目标的数据，供 Render2D 渲染文本使用
     private double currentNearestDistance = -1;
     private String currentNearestName = "";
 
@@ -92,6 +101,7 @@ public class SwordNotifier extends Module {
         }
         this.markedPlayerNames.clear();
         this.alertedPlayerNames.clear();
+        this.lightningQueue.clear();
         this.currentNearestDistance = -1;
         this.currentNearestName = "";
     }
@@ -122,6 +132,28 @@ public class SwordNotifier extends Module {
 
         this.tickCounter++;
 
+        // 🌟 处理本地劈雷特效 (在主线程运行保证安全)
+        if (!this.lightningQueue.isEmpty()) {
+            if (this.strikeLightning.getValue()) {
+                for (Vec3 pos : this.lightningQueue) {
+                    LightningBolt lightning = EntityType.LIGHTNING_BOLT.create(mc.level);
+                    if (lightning != null) {
+                        lightning.setPos(pos.x, pos.y, pos.z);
+                        lightning.setVisualOnly(true); // 设置为纯视觉效果，不生火不造成伤害
+
+                        // 使用极小的负数ID避免与服务器里的实体ID冲突
+                        int fakeEntityId = -100000 - (int)(Math.random() * 10000);
+                        //mc.level.addEntity(fakeEntityId, lightning);
+
+                        // 播放本地立体声雷声
+                        mc.level.playLocalSound(pos.x, pos.y, pos.z, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.WEATHER, 10000.0F, 0.8F + mc.level.random.nextFloat() * 0.2F, false);
+                        mc.level.playLocalSound(pos.x, pos.y, pos.z, SoundEvents.LIGHTNING_BOLT_IMPACT, SoundSource.WEATHER, 2.0F, 0.5F + mc.level.random.nextFloat() * 0.2F, false);
+                    }
+                }
+            }
+            this.lightningQueue.clear(); // 清空队列
+        }
+
         double nearestDistance = -1;
         String nearestName = "";
 
@@ -133,14 +165,12 @@ public class SwordNotifier extends Module {
             if (rawName == null) continue;
 
             if (this.markedPlayerNames.contains(rawName.toLowerCase().trim())) {
-                // 原版发光机制（每 Tick 强制设置，对抗服务器重置）
                 if (this.nativeGlow.getValue()) {
                     player.setGlowingTag(true);
                 } else {
                     player.setGlowingTag(false);
                 }
 
-                // 寻找最近的被标记玩家
                 double distance = mc.player.distanceTo(player);
                 if (nearestDistance < 0 || distance < nearestDistance) {
                     nearestDistance = distance;
@@ -149,29 +179,24 @@ public class SwordNotifier extends Module {
             }
         }
 
-        // 更新缓存供渲染事件使用
         this.currentNearestDistance = nearestDistance;
         this.currentNearestName = nearestName;
 
-        // 🌟 听觉雷达逻辑 (基于 Tick 控制频率)
+        // 🌟 听觉雷达逻辑
         if (this.soundAlert.getValue() && nearestDistance >= 0) {
             if (nearestDistance <= 10.0) {
-                // 10格以内：每秒 4 下 (20 / 5 = 4)
                 if (this.tickCounter % 5 == 0) {
                     mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
                 }
             } else if (nearestDistance <= 20.0) {
-                // 10到20格：每秒 2 下 (20 / 10 = 2)
                 if (this.tickCounter % 10 == 0) {
                     mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
                 }
             } else if (nearestDistance <= 30.0) {
-                // 20到30格：每秒 1 下 (20 / 20 = 1)
                 if (this.tickCounter % 20 == 0) {
                     mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
                 }
             }
-            // 30格以外不响
         }
     }
 
@@ -197,13 +222,19 @@ public class SwordNotifier extends Module {
                         String lowerName = rawName.toLowerCase().trim();
                         this.markedPlayerNames.add(lowerName);
 
-                        if (this.chatAlert.getValue() && !this.alertedPlayerNames.contains(lowerName)) {
-                            mc.gui.getChat().addMessage(net.minecraft.network.chat.Component.literal(
-                                    "§c[Warning] §f玩家 §e" + rawName + " §f曾手持钻石剑，已被全网永久锁定！"
-                            ));
-                            this.alertedPlayerNames.add(lowerName);
+                        // 当且仅当第一次发现此人拿剑时（即不在已警告名单内），才劈雷和发消息
+                        if (!this.alertedPlayerNames.contains(lowerName)) {
 
-                            this.sendNextMessage(rawName);
+                            // 👉 将目标坐标推入队列，等待下一次 Tick 劈雷
+                            this.lightningQueue.add(targetPlayer.position());
+
+                            if (this.chatAlert.getValue()) {
+                                mc.gui.getChat().addMessage(net.minecraft.network.chat.Component.literal(
+                                        "§c[Warning] §f玩家 §e" + rawName + " §f是杀手，已被全网永久锁定！"
+                                ));
+                                this.sendNextMessage(rawName);
+                            }
+                            this.alertedPlayerNames.add(lowerName);
                         }
                     }
                 }
@@ -248,7 +279,6 @@ public class SwordNotifier extends Module {
     public void onRender2D(Render2DEvent event) {
         if (mc.player == null || mc.level == null) return;
 
-        // 自动冷却重发原版包
         if (this.sendToPublicChat.getValue() && !this.pendingMessage.isEmpty() && this.retryTime > 0) {
             if (System.currentTimeMillis() >= this.retryTime) {
                 this.sendNativeChatMessage(this.pendingMessage);
@@ -257,7 +287,6 @@ public class SwordNotifier extends Module {
             }
         }
 
-        // 读取 onTick 中计算好的距离进行文本渲染
         if (this.currentNearestDistance < 0) return;
 
         if (this.distanceText.getValue()) {
@@ -269,6 +298,17 @@ public class SwordNotifier extends Module {
             float x = screenWidth / 2.0f;
             float y = screenHeight * 0.65f;
 
+            Color distanceColor;
+            if (this.currentNearestDistance <= 10.0) {
+                distanceColor = new Color(255, 30, 30);
+            } else if (this.currentNearestDistance <= 20.0) {
+                distanceColor = new Color(255, 128, 0);
+            } else if (this.currentNearestDistance <= 30.0) {
+                distanceColor = new Color(255, 255, 0);
+            } else {
+                distanceColor = new Color(50, 255, 50);
+            }
+
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
             com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
 
@@ -278,7 +318,7 @@ public class SwordNotifier extends Module {
                         text,
                         x,
                         y,
-                        new java.awt.Color(255, 30, 30)
+                        distanceColor
                 );
             }
         }
