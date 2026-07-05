@@ -9,9 +9,11 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.sounds.SoundEvents;
 import shit.zen.event.EventTarget;
 import shit.zen.event.impl.PacketEvent;
 import shit.zen.event.impl.Render2DEvent;
+import shit.zen.event.impl.TickEvent;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
 import shit.zen.render.FontStore;
@@ -27,10 +29,14 @@ public class SwordNotifier extends Module {
     public static SwordNotifier INSTANCE;
 
     public final BooleanSetting chatAlert = new BooleanSetting("Chat Alert", true);
-    public final BooleanSetting redEsp = new BooleanSetting("Red ESP", true);
     public final BooleanSetting distanceText = new BooleanSetting("Distance Text", true);
+    public final BooleanSetting redesp = new BooleanSetting("RED MARK", true);
     public final BooleanSetting sendToPublicChat = new BooleanSetting("Send To Public Chat", false);
-    public final BooleanSetting screenFlash = new BooleanSetting("Screen Flash Alert", true);
+
+    // 🌟 新增：听觉雷达警告（替代眼瞎红屏）
+    public final BooleanSetting soundAlert = new BooleanSetting("Sound Alert", true);
+    // 🌟 新增：原版光灵箭透视高亮（替代传统ESP方框）
+    public final BooleanSetting nativeGlow = new BooleanSetting("Native Glow", true);
 
     private final Set<String> markedPlayerNames = new HashSet<>();
     private final Set<String> alertedPlayerNames = new HashSet<>();
@@ -38,6 +44,7 @@ public class SwordNotifier extends Module {
     private int textIndex = 0;
     private String pendingMessage = "";
     private long retryTime = 0;
+    private long lastSoundTime = 0; // 控制提示音的冷却时间
 
     public SwordNotifier() {
         super("SwordNotifier", Category.RENDER);
@@ -54,6 +61,7 @@ public class SwordNotifier extends Module {
         this.clearMarkers();
         this.pendingMessage = "";
         this.retryTime = 0;
+        this.lastSoundTime = 0;
         super.onEnable();
     }
 
@@ -64,16 +72,22 @@ public class SwordNotifier extends Module {
     }
 
     private void clearMarkers() {
+        // 清理时，顺手把世界里所有被发光的玩家恢复原样
+        if (mc.level != null) {
+            for (Player player : mc.level.players()) {
+                if (player != null && player.getGameProfile().getName() != null) {
+                    if (this.markedPlayerNames.contains(player.getGameProfile().getName().toLowerCase().trim())) {
+                        player.setGlowingTag(false);
+                    }
+                }
+            }
+        }
         this.markedPlayerNames.clear();
         this.alertedPlayerNames.clear();
     }
 
-    /**
-     * 🛠️ 彻底放弃外部工具类，调用原版最底层的玩家聊天发包
-     */
     private void sendNativeChatMessage(String text) {
         if (mc.player == null || text.isEmpty()) return;
-        // 原版自带的本地过滤与上报抽象，安全绕过混淆直接发送真实聊天包
         mc.player.connection.sendChat(text);
     }
 
@@ -90,6 +104,25 @@ public class SwordNotifier extends Module {
         this.textIndex = (this.textIndex + 1) % 3;
         this.pendingMessage = msg;
         this.sendNativeChatMessage(msg);
+    }
+
+    @EventTarget
+    public void onTick(TickEvent event) {
+        if (mc.player == null || mc.level == null) return;
+
+        // 🌟 核心逻辑：给所有被标记的杀手挂上“光灵箭”的原版透视轮廓
+        for (Player player : mc.level.players()) {
+            if (player == mc.player) continue;
+
+            String rawName = player.getGameProfile().getName();
+            if (rawName != null && this.markedPlayerNames.contains(rawName.toLowerCase().trim())) {
+                if (this.nativeGlow.getValue()) {
+                    player.setGlowingTag(true);
+                } else {
+                    player.setGlowingTag(false); // 如果关了设置，随时取消发光
+                }
+            }
+        }
     }
 
     @EventTarget
@@ -194,63 +227,16 @@ public class SwordNotifier extends Module {
 
         if (nearestDistance < 0) return;
 
-        // 🛠️ 核心修改：只闪四周 2/5 面积，且边缘向内实现平滑渐变
-        if (this.screenFlash.getValue() && nearestDistance <= 30.0) {
-            int sw = mc.getWindow().getGuiScaledWidth();
-            int sh = mc.getWindow().getGuiScaledHeight();
-
-            double speed = 1.0 + (30.0 - nearestDistance) * 0.4;
-            float alphaAlpha = (float) ((Math.sin(System.currentTimeMillis() * 0.005 * speed) + 1.0) / 2.0);
-
-            if (nearestDistance < 6.0) alphaAlpha = 0.45f;
-            else alphaAlpha *= 0.35f;
-
-            if (alphaAlpha > 0.01f) {
-                com.mojang.blaze3d.systems.RenderSystem.enableBlend();
-                com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
-
-                com.mojang.blaze3d.vertex.Tesselator tesselator = com.mojang.blaze3d.vertex.Tesselator.getInstance();
-                com.mojang.blaze3d.vertex.BufferBuilder bufferbuilder = tesselator.getBuilder();
-                com.mojang.blaze3d.systems.RenderSystem.setShader(net.minecraft.client.renderer.GameRenderer::getPositionColorShader);
-
-                int maxAlphaInt = (int)(alphaAlpha * 255);
-                org.joml.Matrix4f matrix = event.poseStack().last().pose();
-
-                // 📐 计算 2/5 (40%) 边缘界限
-                float borderX = sw * 0.4f;
-                float borderY = sh * 0.4f;
-
-                bufferbuilder.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS, com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR);
-
-                // 1. 顶部边缘渐变 (上边缘向下过渡 2/5)
-                bufferbuilder.vertex(matrix, 0.0F, borderY, 0.0F).color(255, 0, 0, 0).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw, borderY, 0.0F).color(255, 0, 0, 0).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw, 0.0F, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-                bufferbuilder.vertex(matrix, 0.0F, 0.0F, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-
-                // 2. 底部边缘渐变 (下边缘向上过渡 2/5)
-                bufferbuilder.vertex(matrix, 0.0F, (float)sh, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw, (float)sh, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw, (float)sh - borderY, 0.0F).color(255, 0, 0, 0).endVertex();
-                bufferbuilder.vertex(matrix, 0.0F, (float)sh - borderY, 0.0F).color(255, 0, 0, 0).endVertex();
-
-                // 3. 左侧边缘渐变 (左边缘向右过渡 2/5)
-                bufferbuilder.vertex(matrix, 0.0F, (float)sh, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-                bufferbuilder.vertex(matrix, borderX, (float)sh, 0.0F).color(255, 0, 0, 0).endVertex();
-                bufferbuilder.vertex(matrix, borderX, 0.0F, 0.0F).color(255, 0, 0, 0).endVertex();
-                bufferbuilder.vertex(matrix, 0.0F, 0.0F, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-
-                // 4. 右侧边缘渐变 (右边缘向左过渡 2/5)
-                bufferbuilder.vertex(matrix, (float)sw - borderX, (float)sh, 0.0F).color(255, 0, 0, 0).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw, (float)sh, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw, 0.0F, 0.0F).color(255, 0, 0, maxAlphaInt).endVertex();
-                bufferbuilder.vertex(matrix, (float)sw - borderX, 0.0F, 0.0F).color(255, 0, 0, 0).endVertex();
-
-                tesselator.end();
+        // 🌟 新增：听觉雷达报警（距离 30 格以内触发，防刷屏 3 秒冷却）
+        if (this.soundAlert.getValue() && nearestDistance <= 30.0) {
+            if (System.currentTimeMillis() - this.lastSoundTime > 3000L) {
+                // 播放极其清晰且不刺耳的提示音 (经验球吸收的声音)
+                mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
+                this.lastSoundTime = System.currentTimeMillis();
             }
         }
 
-        // 准星下方危险距离文本
+        // 准星下方危险距离文本 (保留)
         if (this.distanceText.getValue()) {
             String text = String.format("⚠ 危险目标 [%s] 距你 %.1f 格 ⚠", nearestName, nearestDistance);
 

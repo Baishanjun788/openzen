@@ -1,5 +1,6 @@
 package shit.zen.modules.impl.render;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
@@ -8,11 +9,17 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import java.awt.Color;
+import java.io.File;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -42,11 +49,10 @@ public class ESP extends Module {
     public static ESP INSTANCE;
 
     public record Pair<A, B>(A first, B second) {
-
         public static <A, B> Pair<A, B> of(A a, B b) {
-                return new Pair<>(a, b);
-            }
+            return new Pair<>(a, b);
         }
+    }
 
     private final ModeSetting modeSetting = new ModeSetting("Mode", "Glow", "Outlined 2D").withDefault("Outlined 2D");
     private final BooleanSetting skeletonSetting = new BooleanSetting("Skeleton", false);
@@ -55,16 +61,48 @@ public class ESP extends Module {
     private final BooleanSetting animalsSetting = new BooleanSetting("Animals", false);
     private final BooleanSetting itemsSetting = new BooleanSetting("Items", false);
     private final BooleanSetting arrowsSetting = new BooleanSetting("Arrows", true);
-    private final Map<Entity, Pair<Vector4d, Boolean>> entityBoxPositions = new HashMap<>();
-    private final Map<Entity, float[][]> playerBoneRotations = new HashMap<>();
+
+    // 🌟 新增：ChenQiYuan 贴图开关
+    public final BooleanSetting chenQiYuanSetting = new BooleanSetting("ChenQiYuan", true);
+
     private final BooleanSetting showHealthBarSetting = new BooleanSetting("Show Health Bar", true);
     private final ModeSetting healthBarPositionSetting = new ModeSetting("Health Bar Position", "Bottom", "Top", "Left", "Right").withDefault("Bottom");
+
+    private final Map<Entity, Pair<Vector4d, Boolean>> entityBoxPositions = new HashMap<>();
+    private final Map<Entity, float[][]> playerBoneRotations = new HashMap<>();
     private final List<Entity> visibleEntities = new ArrayList<>();
     private final List<Vector2f> projectedPoints = new ArrayList<>();
+
+    // 用于保存动态加载的外部图片资源
+    private ResourceLocation chenQiYuanTexture = null;
 
     public ESP() {
         super("ESP", Category.RENDER);
         INSTANCE = this;
+    }
+
+    /**
+     * 核心：从 Config 文件夹读取本地 chenqiyuan.png，并注册到渲染引擎
+     */
+    private void loadChenQiYuanTexture() {
+        if (this.chenQiYuanTexture != null) return; // 防止重复加载掉帧
+
+        try {
+            // 这里假设你的配置文件存在于游戏目录下的 "zen" 文件夹中
+            // 如果你的 ConfigManager 用的是别的名字，请把 "zen" 改成对应的文件夹名
+            File file = new File(mc.gameDirectory, "zen/chenqiyuan.png");
+
+            if (file.exists()) {
+                InputStream is = Files.newInputStream(file.toPath());
+                NativeImage image = NativeImage.read(is);
+                DynamicTexture dynamicTexture = new DynamicTexture(image);
+                // 注册一个专用的 ResourceLocation 以供着色器绑定
+                this.chenQiYuanTexture = mc.getTextureManager().register("chenqiyuan_esp", dynamicTexture);
+                is.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public boolean isGlowing(Entity entity) {
@@ -80,6 +118,8 @@ public class ESP extends Module {
 
     @Override
     protected void onEnable() {
+        // 开启模块时尝试加载图片
+        this.loadChenQiYuanTexture();
         super.onEnable();
     }
 
@@ -107,14 +147,23 @@ public class ESP extends Module {
     @EventTarget
     public void onRender(RenderEvent renderEvent) {
         if (mc.level == null || mc.player == null) return;
+
+        float partial = renderEvent.partialTick();
+
+        // 🌟 新增：独立于 ESP 模式的 3D 头像渲染
+        if (this.chenQiYuanSetting.getValue() && this.chenQiYuanTexture != null) {
+            this.renderChenQiYuanHeads(renderEvent.poseStack(), partial);
+        }
+
         if (!"Outlined 2D".equals(this.modeSetting.getValue())) {
             this.entityBoxPositions.clear();
             return;
         }
+
         ProjectionUtil.updateMatrices();
         this.entityBoxPositions.clear();
         this.visibleEntities.clear();
-        float partial = renderEvent.partialTick();
+
         for (Entity entity : mc.level.entitiesForRendering()) {
             if (!this.shouldShowEntity(entity) || !this.isInRange(entity)) continue;
             this.visibleEntities.add(entity);
@@ -152,6 +201,59 @@ public class ESP extends Module {
         }
     }
 
+    /**
+     * 3D 世界内渲染图片，实现完美随距离缩放、精准覆盖头部
+     */
+    private void renderChenQiYuanHeads(PoseStack poseStack, float partial) {
+        Camera camera = mc.gameRenderer.getMainCamera();
+        Vec3 camPos = camera.getPosition();
+
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        // 绑定材质着色器
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        // 绑定动态生成的图片资源
+        RenderSystem.setShaderTexture(0, this.chenQiYuanTexture);
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder buffer = tesselator.getBuilder();
+
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            // 只渲染玩家头部
+            if (!(entity instanceof Player player) || player == mc.player) continue;
+
+            // 计算平滑移动后的位置，头部中心大概在 y + 高度 - 0.25 的位置
+            double x = Mth.lerp(partial, player.xOld, player.getX()) - camPos.x;
+            double y = Mth.lerp(partial, player.yOld, player.getY()) - camPos.y + player.getBbHeight() - 0.25;
+            double z = Mth.lerp(partial, player.zOld, player.getZ()) - camPos.z;
+
+            poseStack.pushPose();
+            poseStack.translate(x, y, z);
+
+            // 核心 1：Billboarding 技术（让图片永远正对着你的摄像机屏幕）
+            poseStack.mulPose(camera.rotation());
+
+            // 核心 2：设置尺寸，Minecraft 中玩家头部的标准尺寸刚好是 0.5 格
+            poseStack.scale(-0.5F, -0.5F, 0.5F);
+
+            Matrix4f matrix = poseStack.last().pose();
+
+            buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+            // 绘制贴图的正方形 Quad
+            buffer.vertex(matrix, -0.5F, -0.5F, 0.0F).uv(0.0F, 0.0F).endVertex();
+            buffer.vertex(matrix, -0.5F,  0.5F, 0.0F).uv(0.0F, 1.0F).endVertex();
+            buffer.vertex(matrix,  0.5F,  0.5F, 0.0F).uv(1.0F, 1.0F).endVertex();
+            buffer.vertex(matrix,  0.5F, -0.5F, 0.0F).uv(1.0F, 0.0F).endVertex();
+
+            BufferUploader.drawWithShader(buffer.end());
+            poseStack.popPose();
+        }
+
+        RenderSystem.disableBlend();
+    }
+
     @EventTarget
     public void onRender2D(Render2DEvent event) {
         if (!"Outlined 2D".equals(this.modeSetting.getValue()) || this.entityBoxPositions.isEmpty()) return;
@@ -181,13 +283,9 @@ public class ESP extends Module {
         RenderSystem.disableBlend();
     }
 
-    /**
-     * 计算某个玩家在 ESP 中应显示的颜色。
-     * 如果该玩家被 SwordNotifier 标记（曾持钻石剑）且开启了 Red ESP，则强制显示为红色。
-     */
     private Color getEspColor(Player player) {
         SwordNotifier swordNotifier = SwordNotifier.INSTANCE;
-        if (swordNotifier != null && swordNotifier.isEnabled() && swordNotifier.redEsp.getValue()
+        if (swordNotifier != null && swordNotifier.isEnabled() && swordNotifier.redesp.getValue()
                 && swordNotifier.isMarked(player.getGameProfile().getName())) {
             return Color.RED;
         }
@@ -233,10 +331,6 @@ public class ESP extends Module {
         } else {
             RenderUtil.drawQuad(builder, matrix4f, barX, barY, barX + barW * healthFrac, barY + barH, healthColor);
         }
-    }
-
-    private void renderSkeleton(PoseStack poseStack, float partial) {
-        // Skeleton rendering omitted (heavy obfuscated code); enable Glow mode instead.
     }
 
     private Color getHealthColor(float fraction) {
