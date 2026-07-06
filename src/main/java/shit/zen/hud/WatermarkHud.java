@@ -16,14 +16,18 @@ import shit.zen.render.Paint;
 public class WatermarkHud
         extends ClientBase
         implements IHudElement {
-    private static final FontRenderer logoFont = FontPresets.zenIcon(36.0f);
+    // 【修改点1】将专用的图标字体替换为通用的 Poppins 字体，防止渲染不出字母
+    private static final FontRenderer logoFont = FontPresets.poppinsMedium(36.0f);
     private static final FontRenderer subFont = FontPresets.poppinsMedium(12.0f);
     private static final int primaryColor = new Color(170, 170, 170).getRGB();
     private static final int shadowColor = new Color(0, 0, 0, 100).getRGB();
-    private static final float logoCharWidth = logoFont.getWidth("Z");
+
+    // 【修改点2】排版宽度计算基准字符从 "Z" 改为 "N"
+    private static final float logoCharWidth = logoFont.getWidth("N");
+
     private static final float separatorCharWidth = subFont.getWidth("|");
-    private static final float betaRawWidth = subFont.getWidth("beta");
-    private static final float b1RawWidth = subFont.getWidth("b1");
+    private static final float betaRawWidth = subFont.getWidth("newzamx");
+    private static final float b1RawWidth = subFont.getWidth("v20");
     private static final float sep1Width = Math.max(betaRawWidth, b1RawWidth);
     private static final float betaWidth = logoCharWidth + separatorCharWidth * 2.0f + sep1Width + 48.0f;
     private static final float b1Width = logoFont.getMetrics().capHeight();
@@ -70,13 +74,17 @@ public class WatermarkHud
         int subColor = this.colorWithAlpha(primaryColor, alpha);
         int shadow = this.colorWithAlpha(shadowColor, alpha);
         try (Paint paint = new Paint()){
-            this.drawText(drawContext, paint, "Z", drawX, centerY + 4.0f, logoFont, b1Width, textColor, shadow, true);
+            // 【修改点3】将渲染输出的文本改为大写 "N"
+            this.drawText(drawContext, paint, "N", drawX, centerY + 4.0f, logoFont, b1Width, textColor, shadow, true);
             drawX += logoCharWidth + 12.0f;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
             float betaX = (drawX += separatorCharWidth + 12.0f) + (sep1Width - betaRawWidth) / 2.0f - 13.0f;
             float b1X = drawX + (sep1Width - b1RawWidth) / 2.0f - 13.0f;
+
+            // 保留你修改过的名字和版本号
             this.drawText(drawContext, paint, "newzamx", betaX, centerY - 2.0f, subFont, 0.0f, textColor, shadow, false);
             this.drawText(drawContext, paint, "v20", b1X, centerY + 7.0f, subFont, 0.0f, subColor, shadow, false);
+
             drawX += sep1Width;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
             float line1X = (drawX += separatorCharWidth + 12.0f) + (this.maxSubWidth - this.line1Width) / 2.0f - 13.0f;
@@ -116,7 +124,7 @@ public class WatermarkHud
         ServerData serverData = mc.getCurrentServer();
         String serverIp = serverData != null ? serverData.ip : "Multiplayer";
 
-        // 核心修改逻辑：隐藏特定IP，替换为 127.0.0.1
+        // 保留 IP 混淆逻辑
         if (serverIp != null && serverIp.contains("118.31.71.254")) {
             serverIp = serverIp.replace("118.31.71.254", "127.0.0.1");
         }
