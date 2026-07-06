@@ -77,7 +77,7 @@ public class WatermarkHud
         int shadow = this.colorWithAlpha(shadowColor, alpha);
         try (Paint paint = new Paint()){
             // 【渲染自定义Logo】绘制绑定的字母 "N"
-            this.drawText(drawContext, paint, "NEWZAMX", drawX, centerY + 3.0f, logoFont, b1Width, textColor, shadow, true);
+            this.drawText(drawContext, paint, "NEWZAMX", drawX, centerY + 2.0f, logoFont, b1Width, textColor, shadow, true);
             drawX += logoCharWidth + 12.0f;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
             float betaX = (drawX += separatorCharWidth + 12.0f) + (sep1Width - betaRawWidth) / 2.0f - 13.0f;
