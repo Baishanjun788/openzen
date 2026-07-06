@@ -51,4 +51,9 @@ public final class FontPresets {
     public static FontRenderer axiformaExtraBold(float size) {
         return Fonts.getRenderer("axiforma_extrabold.ttf", size);
     }
+
+    // 正确传入参数 v 并加载对应的字体文件
+    public static FontRenderer newzamx(float v) {
+        return Fonts.getRenderer("newzamx.ttf", v);
+    }
 }
