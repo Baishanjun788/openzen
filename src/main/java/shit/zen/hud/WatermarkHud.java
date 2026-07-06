@@ -23,12 +23,12 @@ public class WatermarkHud
     private static final int shadowColor = new Color(0, 0, 0, 100).getRGB();
 
     // 【排版优化】基准字符全部改为 "N"，完美测量你画的专属图标宽度
-    private static final float logoCharWidth = logoFont.getWidth("N");
+    private static final float logoCharWidth = logoFont.getWidth("NEWZAMX");
     private static final float separatorCharWidth = subFont.getWidth("|");
 
     // 【宽度适配】将测量目标改为你实际绘制的 "newzamx" 和 "v20"，彻底防止文字重叠
     private static final float betaRawWidth = subFont.getWidth("newzamx");
-    private static final float b1RawWidth = subFont.getWidth("v20");
+    private static final float b1RawWidth = subFont.getWidth("v91");
     private static final float sep1Width = Math.max(betaRawWidth, b1RawWidth);
 
     private static final float betaWidth = logoCharWidth + separatorCharWidth * 2.0f + sep1Width + 48.0f;
@@ -77,7 +77,7 @@ public class WatermarkHud
         int shadow = this.colorWithAlpha(shadowColor, alpha);
         try (Paint paint = new Paint()){
             // 【渲染自定义Logo】绘制绑定的字母 "N"
-            this.drawText(drawContext, paint, "N", drawX, centerY + 4.0f, logoFont, b1Width, textColor, shadow, true);
+            this.drawText(drawContext, paint, "NEWZAMX", drawX, centerY + 4.0f, logoFont, b1Width, textColor, shadow, true);
             drawX += logoCharWidth + 12.0f;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
             float betaX = (drawX += separatorCharWidth + 12.0f) + (sep1Width - betaRawWidth) / 2.0f - 13.0f;
@@ -85,7 +85,7 @@ public class WatermarkHud
 
             // 绘制副文本
             this.drawText(drawContext, paint, "newzamx", betaX, centerY - 2.0f, subFont, 0.0f, textColor, shadow, false);
-            this.drawText(drawContext, paint, "v20", b1X, centerY + 7.0f, subFont, 0.0f, subColor, shadow, false);
+            this.drawText(drawContext, paint, "v91", b1X, centerY + 7.0f, subFont, 0.0f, subColor, shadow, false);
 
             drawX += sep1Width;
             this.drawText(drawContext, paint, "|", (drawX += 12.0f) - 13.0f, centerY, subFont, subLineHeight, subColor, shadow, true);
