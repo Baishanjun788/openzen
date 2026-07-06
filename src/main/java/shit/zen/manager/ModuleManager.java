@@ -33,7 +33,6 @@ import shit.zen.modules.impl.movement.TargetStrafe;
 import shit.zen.modules.impl.player.AntiTNT;
 import shit.zen.modules.impl.player.AntiVoid;
 import shit.zen.modules.impl.player.AntiWeb;
-import shit.zen.modules.impl.player.AutoHub; // 🌟 新增导入：自动回城模块
 import shit.zen.modules.impl.player.AutoMLG;
 import shit.zen.modules.impl.player.AutoWebPlace;
 import shit.zen.modules.impl.player.ChestStealer;
@@ -95,7 +94,6 @@ public class ModuleManager extends ClientBase {
         this.register(new AntiTNT());
         this.register(new AntiVoid());
         this.register(new AntiWeb());
-        this.register(new AutoHub()); // 🌟 新增注册：将自动回城模块加入全端列表中
         this.register(new AutoMLG());
         this.register(new AutoWebPlace());
         this.register(new ChestStealer());
