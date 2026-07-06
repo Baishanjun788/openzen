@@ -18,37 +18,10 @@ import shit.zen.modules.impl.misc.AimAssist;
 import shit.zen.modules.impl.misc.AutoClicker;
 import shit.zen.modules.impl.misc.AutoRod;
 import shit.zen.modules.impl.misc.SafeWalk;
-import shit.zen.modules.impl.movement.CollisionSpeed;
-import shit.zen.modules.impl.movement.NoSlow;
-import shit.zen.modules.impl.movement.FastWeb;
-import shit.zen.modules.impl.movement.FireballBlink;
-import shit.zen.modules.impl.movement.Fly;
-import shit.zen.modules.impl.movement.GuiMove;
-import shit.zen.modules.impl.movement.HighJump;
-import shit.zen.modules.impl.movement.NoDelay;
-import shit.zen.modules.impl.movement.NoPush;
-import shit.zen.modules.impl.movement.Scaffold;
-import shit.zen.modules.impl.movement.Sprint;
-import shit.zen.modules.impl.movement.TargetStrafe;
-import shit.zen.modules.impl.player.AntiTNT;
-import shit.zen.modules.impl.player.AntiVoid;
-import shit.zen.modules.impl.player.AntiWeb;
-import shit.zen.modules.impl.player.AutoMLG;
-import shit.zen.modules.impl.player.AutoWebPlace;
-import shit.zen.modules.impl.player.ChestStealer;
-import shit.zen.modules.impl.player.GhostHand;
-import shit.zen.modules.impl.player.Helper;
-import shit.zen.modules.impl.player.InventoryManager;
-import shit.zen.modules.impl.player.MidPearl;
-import shit.zen.modules.impl.player.NoFall;
-import shit.zen.modules.impl.player.Stuck;
+import shit.zen.modules.impl.movement.*;
+import shit.zen.modules.impl.player.*;
 import shit.zen.modules.impl.render.*;
-import shit.zen.modules.impl.world.AntiStaff;
-import shit.zen.modules.impl.world.AutoPlay;
-import shit.zen.modules.impl.world.AutoTools;
-import shit.zen.modules.impl.world.Debugger;
-import shit.zen.modules.impl.world.Teams;
-import shit.zen.modules.impl.world.WebUI;
+import shit.zen.modules.impl.world.*;
 import shit.zen.event.EventTarget;
 
 public class ModuleManager extends ClientBase {
@@ -59,6 +32,7 @@ public class ModuleManager extends ClientBase {
     }
 
     public void initModules() {
+        // Combat
         this.register(new AntiBots());
         this.register(new AntiFireball());
         this.register(new AntiKB());
@@ -69,15 +43,19 @@ public class ModuleManager extends ClientBase {
         this.register(new Critical());
         this.register(new CrystalAura());
         this.register(new KillAura());
+
+        // Exploit
         this.register(new FreeCam());
         this.register(new Disabler());
         this.register(new FastPlace());
 
+        // Misc
         this.register(new AimAssist());
         this.register(new AutoClicker());
         this.register(new AutoRod());
         this.register(new SafeWalk());
 
+        // Movement
         this.register(new CollisionSpeed());
         this.register(new NoSlow());
         this.register(new FastWeb());
@@ -91,6 +69,7 @@ public class ModuleManager extends ClientBase {
         this.register(new Sprint());
         this.register(new TargetStrafe());
 
+        // Player
         this.register(new AntiTNT());
         this.register(new AntiVoid());
         this.register(new AntiWeb());
@@ -103,7 +82,9 @@ public class ModuleManager extends ClientBase {
         this.register(new MidPearl());
         this.register(new NoFall());
         this.register(new Stuck());
+        this.register(new VoidHub()); // 成功添加 VoidHub
 
+        // Render
         this.register(new AspectRatio());
         this.register(new ChestESP());
         this.register(new ClickGuiModule());
@@ -121,14 +102,16 @@ public class ModuleManager extends ClientBase {
         this.register(new Watermark());
         this.register(new XRay());
         this.register(new SwordNotifier());
-        this.register(new AntiStaff());
         this.register(new KillEffect());
         this.register(new FakeTime());
+        this.register(new WTap());
+
+        // World
+        this.register(new AntiStaff());
         this.register(new AutoPlay());
         this.register(new AutoTools());
         this.register(new Debugger());
         this.register(new Teams());
-        this.register(new WTap());
         this.register(new WebUI());
     }
 
