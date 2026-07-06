@@ -16,7 +16,7 @@ import shit.zen.render.Paint;
 public class WatermarkHud
         extends ClientBase
         implements IHudElement {
-    // 【核心修改】调用你新放入的 newzamx 字体（如果在 FontPresets 里报错，请看下方第二步的提示）
+    // 【核心修改】调用你新放入的 newzamx 字体（如果在 FontPresets 里报错，请看下方第二步的提示
     private static final FontRenderer logoFont = FontPresets.newzamx(22.0f);
     private static final FontRenderer subFont = FontPresets.poppinsMedium(12.0f);
     private static final int primaryColor = new Color(170, 170, 170).getRGB();
