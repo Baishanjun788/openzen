@@ -277,6 +277,6 @@ jobs:
           gh release create $tag `
               --title $title `
               --notes-file $notes `
-              "build/release/OpenZenLoader-$env:SHA.exe" `
+              "build/release/ZENAMX Loader.exe" `
               "build/release/OpenZen-$env:SHA.jar" `
               "build/release/OpenZen-$env:SHA-mapping.txt"
