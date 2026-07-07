@@ -9,7 +9,7 @@ import shit.zen.modules.Module;
 import shit.zen.settings.impl.NumberSetting;
 
 /**
- * 自由视角（Freecam）：开启后镜头可以脱离身体自由飞行，方便你在原地按按钮/拉杆的同时
+ * 自由视角：开启后镜头可以脱离身体自由飞行，方便你在原地按按钮/拉杆的同时
  * 飞到别的角度去看红石线路的运行状态，人物本体不会跟着移动。
  *
  * 操作方式（跟创造模式飞行一样）：
@@ -20,9 +20,9 @@ import shit.zen.settings.impl.NumberSetting;
  *
  * 实现原理：
  *   - StrafeEvent 是每 tick 拿到的"WASD 换算出来的移动量"，这里读出来用来推动一个独立的
- *     自由视角坐标（this.position），然后把这个事件的移动量清零再交还给游戏，这样真实玩家
+ *     自由视角坐标，然后把这个事件的移动量清零再交还给游戏，这样真实玩家
  *     的移动输入就被"拦截"了，本体不会跟着走。
- *   - 真正把镜头挪到 this.position 这个位置，需要在 Camera.setup() 之后强制覆盖一次相机坐标，
+ *   - 真正把镜头挪到这个位置，需要在 Camera.setup() 之后强制覆盖一次相机坐标，
  *     这部分逻辑在新增的 CameraPatch.java 里（这个模块本身不摸渲染，只负责算"镜头应该在哪"）。
  *
  * 注意：这个不是 noclip 意义上的"允许穿墙走路"，只是镜头位置脱离了身体，
@@ -87,7 +87,7 @@ public class FreeCam extends Module {
     @EventTarget
     public void onStrafe(StrafeEvent event) {
         // 整个方法体包一层 try-catch：
-        // 你的事件框架（OpenZen/asm.patchify）在调用这个方法出异常时，
+        // 你的事件框架在调用这个方法出异常时，
         // 日志里只打印了一行 "invocation target ... InvocationTargetException"，
         // 没有打印 Caused by 的真实堆栈，等于把根因吞掉了。
         // 这里自己兜底捕获，把真正的异常类型、消息、堆栈行数完整打印出来，
@@ -119,7 +119,12 @@ public class FreeCam extends Module {
         boolean flyUp = event.isSprinting();
         boolean flyDown = mc.options.keyShift.isDown();
 
-        double moveSpeed = (double) this.speed.getValue();
+        // 【修复】不能直接 (double) obj，否则编译器会 checkcast 成 Double
+        // 而 NumberSetting.getValue() 实际返回 Float，会抛 ClassCastException。
+        // 先转 Number（Float/Double/Integer 都是 Number 子类），
+        // 再调 doubleValue()，由虚方法分派到正确实现。
+        double moveSpeed = ((Number) this.speed.getValue()).doubleValue();
+
         double yawRad = Math.toRadians(mc.player.getYRot());
 
         // 只用水平朝向算移动方向，抬头/低头不影响飞行平面，飞起来更好控制
@@ -153,4 +158,3 @@ public class FreeCam extends Module {
         event.setSprinting(false);
     }
 }
-//操你妈
