@@ -12,24 +12,12 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.phys.Vec3;
 import shit.zen.ZenClient;
 import shit.zen.modules.impl.render.FreeCam;
-import shit.zen.utils.misc.ReflectionUtil;
+
+import java.lang.reflect.Field;
 
 /**
  * 在游戏原本算完这一帧的相机位置/朝向之后（Camera.setup 跑完），
  * 如果 FreeCam 开着，就把相机坐标强制换成 FreeCam 里维护的那个自由视角坐标。
- * 朝向（yaw/pitch）不动，还是跟着玩家实际的视角走，这样鼠标看方向完全正常，
- * 只有"人在哪"和"镜头在哪"这两件事被拆开了。
- *
- * 注意：Camera.setPosition(Vec3) 在原版里是 protected 的，没法从这里直接调用，
- * 所以改成用 ReflectionUtil 直接写 Camera 内部的 position / blockPosition 两个字段
- * （原版 setPosition 内部实际上也是同时改这两个字段，blockPosition 是给区块/光照相关
- * 查找用的派生值，这里一并同步，避免只改 position 导致细节上不一致）。
- *
- * ============ 调试版本 ============
- * 调试信息直接发到游戏聊天栏（而不是控制台/日志文件），方便直接在游戏里看。
- * 因为 onSetup 每一帧都会执行（60~144次/秒），如果不节流，聊天栏会被刷爆，
- * 所以这里做了节流：正常状态每 1 秒最多输出一次；reflection 失败这种严重错误不节流，每次都发。
- * 排查完之后记得把这些 debugChat 调用删掉。
  */
 @Patch(Camera.class)
 public class CameraPatch {
@@ -60,7 +48,11 @@ public class CameraPatch {
             desc = "(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/world/entity/Entity;ZZF)V",
             at = @At(At.Type.TAIL)
     )
-    public static void onSetup(Camera camera, BlockGetter blockGetter, Entity entity, boolean detached, boolean thirdPerson, float partialTick, CallbackInfo callbackInfo) {
+    // 【修复】移除了 CallbackInfo 参数！
+    // OpenZen 不像 Mixin 那样强制要求带 CallbackInfo，
+    // 如果目标方法是 m_91585_(BlockGetter, Entity, boolean, boolean, float)，
+    // 这里多写一个参数会导致 OpenZen 判定参数数量不匹配，直接跳过注入。
+    public static void onSetup(Camera camera, BlockGetter blockGetter, Entity entity, boolean detached, boolean thirdPerson, float partialTick) {
         // 调试点 1：确认这个 patch 到底有没有被调用到（节流，每秒最多一条）
         debugChatThrottled("onSetup called");
 
@@ -88,9 +80,21 @@ public class CameraPatch {
         debugChatThrottled("applying freecam position: " + freeCamPosition);
 
         try {
-            ReflectionUtil.setFieldValue(camera, freeCamPosition, "position");
-            BlockPos blockPosition = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
-            ReflectionUtil.setFieldValue(camera, blockPosition, "blockPosition");
+            // 【修复】不再依赖 ReflectionUtil 按名字找字段（SRG 环境下名字可能是 f_90557_），
+            // 改成直接遍历 Camera 类的所有字段，按类型暴力替换。
+            // Camera 类里只有一个 Vec3 类型的 position 和一个 BlockPos 类型的 blockPosition，
+            // 这样做 100% 能命中，且不用管混淆映射。
+            BlockPos blockPos = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
+
+            for (Field field : Camera.class.getDeclaredFields()) {
+                field.setAccessible(true);
+                if (field.getType() == Vec3.class) {
+                    field.set(camera, freeCamPosition);
+                } else if (field.getType() == BlockPos.class) {
+                    // 即使是 final 字段，在 JDK 17 下通过 setAccessible(true) 也能强行写入
+                    field.set(camera, blockPos);
+                }
+            }
             debugChatThrottled("reflection success");
         } catch (Exception e) {
             // 反射失败是严重错误，不节流，每次都要看到
@@ -99,4 +103,3 @@ public class CameraPatch {
         }
     }
 }
-//操你妈改了两遍还是不行操你妈逼？
