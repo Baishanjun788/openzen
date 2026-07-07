@@ -36,9 +36,8 @@ public class CameraPatch {
     }
 
     @Inject(
-            method = "m_91585_", // 1.20.1 Camera.setup 的 SRG 名。如果聊天栏完全看不到
-            // "onSetup injected & called"，先怀疑这个名字/desc 不对，
-            // 换回 "setup" 试试（取决于 asm.patchify 是否自动重映射）。
+            method = "setup", // 换回可读名。如果这个也不触发，说明问题不在方法名，
+            // 而是这个 patch 类本身没被框架扫描/注册。
             desc = "(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/world/entity/Entity;ZZF)V",
             at = @At(At.Type.TAIL)
     )
