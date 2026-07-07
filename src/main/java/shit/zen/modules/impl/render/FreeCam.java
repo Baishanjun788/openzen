@@ -73,6 +73,21 @@ public class FreeCam extends Module {
 
     @EventTarget
     public void onStrafe(StrafeEvent event) {
+        // 整个方法体包一层 try-catch：
+        // 你的事件框架（OpenZen/asm.patchify）在调用这个方法出异常时，
+        // 日志里只打印了一行 "invocation target ... InvocationTargetException"，
+        // 没有打印 Caused by 的真实堆栈，等于把根因吞掉了。
+        // 这里自己兜底捕获，把真正的异常类型、消息、堆栈行数完整打印出来，
+        // 排查完问题后可以把这层 try-catch 去掉。
+        try {
+            this.doStrafe(event);
+        } catch (Throwable t) {
+            System.out.println("[FreeCam] onStrafe REAL EXCEPTION: " + t.getClass().getName() + ": " + t.getMessage());
+            t.printStackTrace();
+        }
+    }
+
+    private void doStrafe(StrafeEvent event) {
         if (mc.player == null) {
             return;
         }
