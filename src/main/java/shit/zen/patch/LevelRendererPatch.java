@@ -8,9 +8,14 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import shit.zen.ZenClient;
 import shit.zen.event.impl.RenderEvent;
+import shit.zen.modules.impl.render.FreeCam;
+
+import java.lang.reflect.Field;
 
 @Patch(LevelRenderer.class)
 public class LevelRendererPatch {
@@ -32,6 +37,25 @@ public class LevelRendererPatch {
             CallbackInfo callbackInfo) {
         if (ZenClient.isReady()) {
             ZenClient.getInstance().getEventBus().call(new RenderEvent(poseStack, partialTick));
+        }
+
+        // 【新增：FreeCam 镜头覆盖逻辑】
+        // 这里拿到的 camera 就是游戏本帧要使用的相机，直接改它的内部字段
+        if (FreeCam.INSTANCE != null && FreeCam.INSTANCE.isEnabled()) {
+            Vec3 freeCamPosition = FreeCam.INSTANCE.getPosition();
+            if (freeCamPosition != null) {
+                try {
+                    BlockPos blockPos = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
+                    for (Field field : Camera.class.getDeclaredFields()) {
+                        field.setAccessible(true);
+                        if (field.getType() == Vec3.class) {
+                            field.set(camera, freeCamPosition);
+                        } else if (field.getType() == BlockPos.class) {
+                            field.set(camera, blockPos);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
         }
     }
 }
