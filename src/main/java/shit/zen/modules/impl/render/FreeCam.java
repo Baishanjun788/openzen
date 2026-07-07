@@ -27,6 +27,14 @@ import shit.zen.settings.impl.NumberSetting;
  * 注意：这个不是 noclip 意义上的"允许穿墙走路"，只是镜头位置脱离了身体，
  * 如果想要镜头也能穿过方块自由飞（而不是被"卡"在原地一样只是看向别处），
  * 这个实现天生就是这样的（镜头本来就不受碰撞箱限制），可以直接飞进方块里看内部结构。
+ *
+ * ============ 调试版本 ============
+ * 加了几处 System.out.println，配合 CameraPatch 的调试输出一起看，用来定位问题：
+ *   [FreeCam] onEnable called       -> 开关是否真的触发了 onEnable
+ *   [FreeCam] onDisable called      -> 关闭时是否触发
+ *   [FreeCam] onStrafe position=... -> 每 tick 坐标有没有在正确更新
+ * 排查完之后记得删掉或换成项目自己的 logger（onStrafe 每 tick 都会打印，日志量会很大，
+ * 建议只在怀疑坐标计算有问题时临时打开）。
  */
 public class FreeCam extends Module {
 
@@ -43,13 +51,16 @@ public class FreeCam extends Module {
 
     @Override
     public void onEnable() {
+        System.out.println("[FreeCam] onEnable called, player=" + (mc.player != null));
         if (mc.player != null) {
             this.position = mc.player.getEyePosition();
+            System.out.println("[FreeCam] initial position=" + this.position);
         }
     }
 
     @Override
     public void onDisable() {
+        System.out.println("[FreeCam] onDisable called");
         this.position = null;
     }
 
@@ -95,6 +106,9 @@ public class FreeCam extends Module {
         }
 
         this.position = this.position.add(moveX, moveY, moveZ);
+
+        // 调试：每 tick 坐标变化。日志量大，排查完记得注释掉或删掉。
+        System.out.println("[FreeCam] onStrafe position=" + this.position + " forward=" + forward + " strafe=" + strafe + " flyUp=" + flyUp + " flyDown=" + flyDown);
 
         // 把这个tick的移动量清零，真实玩家本体就不会跟着走
         event.setForward(0.0f);

@@ -22,6 +22,15 @@ import shit.zen.utils.misc.ReflectionUtil;
  * 所以改成用 ReflectionUtil 直接写 Camera 内部的 position / blockPosition 两个字段
  * （原版 setPosition 内部实际上也是同时改这两个字段，blockPosition 是给区块/光照相关
  * 查找用的派生值，这里一并同步，避免只改 position 导致细节上不一致）。
+ *
+ * ============ 调试版本 ============
+ * 下面加了几处 System.out.println，用来定位"没反应"到底卡在哪一步：
+ *   [CameraPatch] onSetup called          -> patch 本身有没有被注入 / 触发
+ *   [CameraPatch] FreeCam not enabled     -> FreeCam 开关状态
+ *   [CameraPatch] position is null        -> FreeCam.getPosition() 是否为 null
+ *   [CameraPatch] reflection success      -> 反射写字段是否成功
+ *   [CameraPatch] reflection FAILED       -> 反射写字段抛异常（会打印堆栈）
+ * 排查完之后记得把这些 println 删掉或者换成你项目自己的 logger。
  */
 @Patch(Camera.class)
 public class CameraPatch {
@@ -32,20 +41,40 @@ public class CameraPatch {
             at = @At(At.Type.TAIL)
     )
     public static void onSetup(Camera camera, BlockGetter blockGetter, Entity entity, boolean detached, boolean thirdPerson, float partialTick, CallbackInfo callbackInfo) {
+        // 调试点 1：确认这个 patch 到底有没有被调用到
+        System.out.println("[CameraPatch] onSetup called");
+
         if (!ZenClient.isReady()) {
+            System.out.println("[CameraPatch] ZenClient not ready, skip");
             return;
         }
-        if (FreeCam.INSTANCE == null || !FreeCam.INSTANCE.isEnabled()) {
+
+        if (FreeCam.INSTANCE == null) {
+            System.out.println("[CameraPatch] FreeCam.INSTANCE is null, skip");
+            return;
+        }
+
+        if (!FreeCam.INSTANCE.isEnabled()) {
+            System.out.println("[CameraPatch] FreeCam not enabled, skip");
             return;
         }
 
         Vec3 freeCamPosition = FreeCam.INSTANCE.getPosition();
         if (freeCamPosition == null) {
+            System.out.println("[CameraPatch] FreeCam position is null, skip");
             return;
         }
 
-        ReflectionUtil.setFieldValue(camera, freeCamPosition, "position");
-        BlockPos blockPosition = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
-        ReflectionUtil.setFieldValue(camera, blockPosition, "blockPosition");
+        System.out.println("[CameraPatch] applying freecam position: " + freeCamPosition);
+
+        try {
+            ReflectionUtil.setFieldValue(camera, freeCamPosition, "position");
+            BlockPos blockPosition = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
+            ReflectionUtil.setFieldValue(camera, blockPosition, "blockPosition");
+            System.out.println("[CameraPatch] reflection success");
+        } catch (Exception e) {
+            System.out.println("[CameraPatch] reflection FAILED: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }

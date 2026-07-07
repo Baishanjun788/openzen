@@ -66,7 +66,10 @@ public class LivingEntityPatch {
 
     @WrapInvoke(method = "tick", desc = "()V", target = "net/minecraft/world/entity/Entity/getYRot", targetDesc = "()F")
     public static float onTickGetYRot(LivingEntity entity, Invocation<LivingEntity, Float> original) throws Exception {
-        return ClientBase.yaw;
+        if (ZenClient.isReady() && entity == ClientBase.mc.player) {
+            return ClientBase.yaw;
+        }
+        return original.call();
     }
 
     @WrapInvoke(method = "jumpFromGround", desc = "()V", target = "net/minecraft/world/entity/Entity/getYRot", targetDesc = "()F")
