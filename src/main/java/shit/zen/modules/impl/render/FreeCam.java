@@ -1,7 +1,8 @@
 package shit.zen.modules.impl.render;
 
-import net.minecraft.network.chat.Component;
+import net.minecraft.client.CameraType;
 import net.minecraft.world.phys.Vec3;
+import shit.zen.ClientBase;
 import shit.zen.event.EventTarget;
 import shit.zen.event.impl.StrafeEvent;
 import shit.zen.modules.Category;
@@ -44,7 +45,9 @@ public class FreeCam extends Module {
     public final NumberSetting speed = new NumberSetting("Speed", 0.5, 0.05, 3.0, 0.05);
 
     private Vec3 position;
+    private Vec3 prevPosition;
     private int debugTickCounter = 0;
+    private CameraType previousCameraType = null;
 
     public FreeCam() {
         super("FreeCam", Category.RENDER);
@@ -57,9 +60,7 @@ public class FreeCam extends Module {
      * 排查完问题后记得删掉所有调用这个方法的地方。
      */
     private void debugChat(String message) {
-        if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("[FreeCam] " + message), false);
-        }
+        ClientBase.logger.info("[FreeCam] {}", message);
     }
 
     @Override
@@ -67,7 +68,19 @@ public class FreeCam extends Module {
         this.debugChat("onEnable called, player=" + (mc.player != null));
         if (mc.player != null) {
             this.position = mc.player.getEyePosition();
+            this.prevPosition = this.position;
             this.debugChat("initial position=" + this.position);
+        }
+        try {
+            if (mc.options != null) {
+                this.previousCameraType = mc.options.getCameraType();
+                mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
+            }
+            if (mc.player != null) {
+                mc.player.setInvisible(false);
+            }
+        } catch (Throwable t) {
+            ClientBase.logger.warn("Failed to switch camera type for FreeCam: {}", t.toString());
         }
     }
 
@@ -75,6 +88,14 @@ public class FreeCam extends Module {
     public void onDisable() {
         this.debugChat("onDisable called");
         this.position = null;
+        this.prevPosition = null;
+        try {
+            if (mc.options != null && this.previousCameraType != null) {
+                mc.options.setCameraType(this.previousCameraType);
+            }
+        } catch (Throwable t) {
+            ClientBase.logger.warn("Failed to restore camera type after FreeCam: {}", t.toString());
+        }
     }
 
     /**
@@ -82,6 +103,12 @@ public class FreeCam extends Module {
      */
     public Vec3 getPosition() {
         return this.position;
+    }
+
+    public Vec3 getInterpolatedPosition(float partialTick) {
+        if (this.position == null) return null;
+        if (this.prevPosition == null) return this.position;
+        return this.prevPosition.lerp(this.position, partialTick);
     }
 
     @EventTarget
@@ -93,14 +120,16 @@ public class FreeCam extends Module {
         // 这里自己兜底捕获，把真正的异常类型、消息、堆栈行数完整打印出来，
         // 排查完问题后可以把这层 try-catch 去掉。
         try {
+            // record previous position for interpolation
+            if (this.position != null) this.prevPosition = this.position;
             this.doStrafe(event);
         } catch (Throwable t) {
             this.debugChat("REAL EXCEPTION: " + t.getClass().getName() + ": " + t.getMessage());
             // 堆栈行数比较多，聊天栏放不下，这里只发前 3 行到聊天栏，完整堆栈还是打印到控制台方便复制。
             StackTraceElement[] trace = t.getStackTrace();
-            for (int i = 0; i < Math.min(3, trace.length); i++) {
-                this.debugChat("  at " + trace[i].toString());
-            }
+                for (int i = 0; i < Math.min(3, trace.length); i++) {
+                    ClientBase.logger.info("[FreeCam]   at {}", trace[i].toString());
+                }
             t.printStackTrace();
         }
     }

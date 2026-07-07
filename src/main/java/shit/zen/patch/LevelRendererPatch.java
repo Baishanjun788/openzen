@@ -46,16 +46,29 @@ public class LevelRendererPatch {
             if (freeCamPosition != null) {
                 try {
                     BlockPos blockPos = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
-                    for (Field field : Camera.class.getDeclaredFields()) {
-                        field.setAccessible(true);
-                        if (field.getType() == Vec3.class) {
-                            field.set(camera, freeCamPosition);
-                        } else if (field.getType() == BlockPos.class) {
-                            field.set(camera, blockPos);
-                        }
-                    }
+                    setCameraField(camera, "position", freeCamPosition);
+                    setCameraField(camera, "blockPosition", blockPos);
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    private static void setCameraField(Camera camera, String fieldName, Object value) throws Exception {
+        Field field = null;
+        try {
+            field = Camera.class.getDeclaredField(fieldName);
+        } catch (NoSuchFieldException ignored) {
+            for (Field f : Camera.class.getDeclaredFields()) {
+                if (value != null && f.getType().isAssignableFrom(value.getClass())) {
+                    field = f;
+                    break;
+                }
+            }
+            if (field == null) {
+                throw new NoSuchFieldException(fieldName);
+            }
+        }
+        field.setAccessible(true);
+        field.set(camera, value);
     }
 }

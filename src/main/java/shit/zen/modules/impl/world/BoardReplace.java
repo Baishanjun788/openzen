@@ -22,7 +22,7 @@ public class BoardReplace extends Module {
     public static BoardReplace INSTANCE;
 
     public static final String TARGET_TEXT = "布吉岛";
-    public static final String REPLACEMENT_TEXT = "吉吉吉";
+    public static final String REPLACEMENT_TEXT = "吉吉岛";
 
     public BoardReplace() {
         super("BoardReplace", Category.WORLD);

@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.scores.PlayerTeam;
 import shit.zen.modules.impl.world.BoardReplace;
+import shit.zen.utils.misc.ComponentUtil;
 import shit.zen.utils.misc.ReflectionUtil;
 
 /**
@@ -21,14 +22,27 @@ public class PlayerTeamPatch {
 
     @Overwrite(method = "getPlayerPrefix", desc = "()Lnet/minecraft/network/chat/Component;")
     public static Component overwriteGetPlayerPrefix(PlayerTeam team) {
-        Component original = (Component) ReflectionUtil.getStaticField(team, "playerPrefix", "net/minecraft/world/scores/PlayerTeam");
+        Component original = getPlayerTeamComponent(team, "playerPrefix", "prefix");
         return replaceIfNeeded(original);
     }
 
     @Overwrite(method = "getPlayerSuffix", desc = "()Lnet/minecraft/network/chat/Component;")
     public static Component overwriteGetPlayerSuffix(PlayerTeam team) {
-        Component original = (Component) ReflectionUtil.getStaticField(team, "playerSuffix", "net/minecraft/world/scores/PlayerTeam");
+        Component original = getPlayerTeamComponent(team, "playerSuffix", "suffix");
         return replaceIfNeeded(original);
+    }
+
+    private static Component getPlayerTeamComponent(PlayerTeam team, String... names) {
+        for (String name : names) {
+            try {
+                Component component = (Component) ReflectionUtil.getStaticField(team, name, "net/minecraft/world/scores/PlayerTeam");
+                if (component != null) {
+                    return component;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     private static Component replaceIfNeeded(Component original) {
@@ -44,8 +58,6 @@ public class PlayerTeamPatch {
             return original;
         }
 
-        String replaced = text.replace(BoardReplace.TARGET_TEXT, BoardReplace.REPLACEMENT_TEXT);
-        MutableComponent newComponent = Component.literal(replaced);
-        return newComponent.withStyle(original.getStyle());
+        return ComponentUtil.replaceText(original, BoardReplace.TARGET_TEXT, BoardReplace.REPLACEMENT_TEXT);
     }
 }

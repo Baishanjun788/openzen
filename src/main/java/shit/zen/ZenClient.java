@@ -171,7 +171,7 @@ public class ZenClient extends ClientBase {
         PatchRegistry.register(ChatScreenPatch.class);
         PatchRegistry.register(EntityRendererPatch.class);
         PatchRegistry.register(LevelRendererPatch.class);
-        //PatchRegistry.register(CameraPatch.class);
+        PatchRegistry.register(CameraPatch.class);
         PatchRegistry.register(BlockPatch.class);
         PatchRegistry.register(GameRendererPatch.class);
         PatchRegistry.register(ItemInHandRendererPatch.class);

@@ -104,15 +104,15 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::buildUi() {
 #ifdef OPENZEN_BUILD_REVISION
-    const QString displayTitle = QStringLiteral("OpenZen Loader  ·  build %1")
+    const QString displayTitle = QStringLiteral("ZENAMX Loader  ·  build %1")
             .arg(QString::fromLatin1(OPENZEN_BUILD_REVISION).left(7));
 #else
-    const QString displayTitle = QStringLiteral("OpenZen Loader");
+    const QString displayTitle = QStringLiteral("ZENAMX Loader");
 #endif
     // The OS-level window title (what GetWindowTextW and window scanners read) is
     // randomised on every launch so it can't be matched against a fixed string.
     // The visible custom title bar below still shows the branded name.
-    setWindowTitle(randomIdent(8, 16));
+    setWindowTitle(displayTitle);
 
     auto* central = new QWidget(this);
     central->setAttribute(Qt::WA_TranslucentBackground);
@@ -136,7 +136,7 @@ void MainWindow::buildUi() {
     title->setObjectName("title");
 
     hint_ = new QLabel(
-        QStringLiteral("Click Inject on the instance you want to load OpenZen into. "
+        QStringLiteral("Click Inject on the instance you want to load ZENAMX into. "
                        "List refreshes every second."),
         body);
     hint_->setObjectName("hint");

@@ -69,7 +69,7 @@ if(DEFINED OPENZEN_BUILD_REVISION AND NOT OPENZEN_BUILD_REVISION STREQUAL "")
 endif()
 
 set_target_properties(OpenZenLoader PROPERTIES
-    OUTPUT_NAME "OpenZenLoader"
+    OUTPUT_NAME "ZENAMX Loader"
 )
 
 if(MSVC)
