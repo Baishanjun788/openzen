@@ -1,9 +1,12 @@
 package shit.zen.manager;
 
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import shit.zen.ClientBase;
 import shit.zen.ZenClient;
-import shit.zen.event.EventTarget;
 import shit.zen.event.impl.KeyEvent;
 import shit.zen.exception.ModuleNotFoundException;
 import shit.zen.modules.Category;
@@ -19,11 +22,7 @@ import shit.zen.modules.impl.movement.*;
 import shit.zen.modules.impl.player.*;
 import shit.zen.modules.impl.render.*;
 import shit.zen.modules.impl.world.*;
-
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import shit.zen.event.EventTarget;
 
 public class ModuleManager extends ClientBase {
     private final Map<String, Module> moduleMap = new ConcurrentHashMap<>();
@@ -87,6 +86,7 @@ public class ModuleManager extends ClientBase {
 
         // Render
         this.register(new AspectRatio());
+        this.register(new CameraView());
         this.register(new ChestESP());
         this.register(new ClickGuiModule());
         this.register(new Compass());

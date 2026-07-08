@@ -618,7 +618,7 @@ tasks.register('buildNative', Exec) {
         // --parallel forwards a job count to the generator (MSBuild gets /m,
         // Ninja gets -j). MSBuild defaults to a single process otherwise.
         // Local builds use 1 job (single-threaded) to match the serialised Qt
-        // build above and rule out parallel-compilation instability; CI keeps
+        // build above and rule out parallel-compilation insZtability; CI keeps
         // full parallelism for speed.
         def jobs = (System.getenv('GITHUB_ACTIONS') == null) ? 1 : Runtime.runtime.availableProcessors()
         logger.lifecycle("Parallel jobs: ${jobs}")
