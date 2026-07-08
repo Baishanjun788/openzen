@@ -132,12 +132,12 @@ void MainWindow::buildUi() {
     layout->setContentsMargins(18, 14, 18, 14);
     layout->setSpacing(10);
 
-    auto* title = new QLabel(QStringLiteral("Minecraft Instances"), body);
+    auto* title = new QLabel(QStringLiteral("寻找 Minecraft 进程"), body);
     title->setObjectName("title");
 
     hint_ = new QLabel(
-        QStringLiteral("Click Inject on the instance you want to load ZENAMX into. "
-                       "List refreshes every second."),
+        QStringLiteral("点击你想注入 ZENAMX 的 Minecraft 进程； "
+                       "进程每秒刷新一次。"),
         body);
     hint_->setObjectName("hint");
     hint_->setWordWrap(true);
@@ -146,7 +146,7 @@ void MainWindow::buildUi() {
     connect(list_, &InstanceList::injectRequested,
             this, &MainWindow::onInjectRequested);
 
-    status_ = new QLabel(QStringLiteral("Watching for Minecraft processes…"), body);
+    status_ = new QLabel(QStringLiteral("正在寻找 Minecraft 进程…"), body);
     status_->setObjectName("status");
     status_->setWordWrap(true);
 
@@ -280,7 +280,7 @@ void MainWindow::refreshNow() {
     }
 
     list_->setInstances(filtered);
-    status_->setText(QStringLiteral("Watching %1 Minecraft instance(s).")
+    status_->setText(QStringLiteral("找到了 %1 个 Minecraft 进程，火速注入 ZENAMX")
                      .arg(list_->count()));
 }
 

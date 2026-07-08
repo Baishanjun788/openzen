@@ -1,8 +1,8 @@
 package shit.zen.modules.impl.render;
 
+import java.util.*;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.animal.Squid;
 import net.minecraft.world.entity.player.Player;
 import shit.zen.event.EventTarget;
@@ -12,8 +12,6 @@ import shit.zen.modules.Category;
 import shit.zen.modules.Module;
 import shit.zen.modules.impl.combat.KillAura;
 import shit.zen.utils.misc.SoundUtil;
-
-import java.util.*;
 
 public class KillEffect extends Module {
 

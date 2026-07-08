@@ -1,8 +1,9 @@
 package shit.zen.modules.impl.render;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.CameraType;
-import net.minecraft.world.phys.Vec3;
 import shit.zen.ClientBase;
+import net.minecraft.world.phys.Vec3;
 import shit.zen.event.EventTarget;
 import shit.zen.event.impl.StrafeEvent;
 import shit.zen.modules.Category;
@@ -185,5 +186,3 @@ public class FreeCam extends Module {
         event.setSprinting(false);
     }
 }
-
-//LLL

@@ -13,6 +13,7 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.phys.Vec3;
 import shit.zen.ZenClient;
 import shit.zen.modules.impl.render.FreeCam;
+import shit.zen.modules.impl.render.CameraView;
 
 import java.lang.reflect.Field;
 
@@ -35,12 +36,10 @@ public class CameraPatch {
     }
 
     @Inject(
-            method = "setup", // 换回可读名。如果这个也不触发，说明问题不在方法名，
-            // 而是这个 patch 类本身没被框架扫描/注册。
+            method = "setup",
             desc = "(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/world/entity/Entity;ZZF)V",
             at = @At(At.Type.TAIL)
     )
-    // 第一个参数是目标类的实例(Camera)，中间是原方法的5个参数，最后一个是同包下的 CallbackInfo
     public static void onSetup(
             Camera camera,
             BlockGetter blockGetter,
@@ -50,12 +49,34 @@ public class CameraPatch {
             float partialTick,
             CallbackInfo callbackInfo) {
 
-        debugChatThrottled("onSetup injected & called");
+        debugChatThrottled("onSetup injected & called, thirdPerson=" + thirdPerson);
 
         if (!ZenClient.isReady()) {
             return;
         }
 
+        // 优先检查 CameraView 模块（相机高度固定）
+        if (CameraView.INSTANCE != null && CameraView.INSTANCE.isEnabled() && CameraView.INSTANCE.shouldApplyView()) {
+            Double baselineY = CameraView.INSTANCE.getBaselineY();
+            if (baselineY != null) {
+                try {
+                    Vec3 currentPos = (Vec3) getFieldValue(camera, "position");
+                    if (currentPos != null) {
+                        // 只修改 Y 坐标，保留原生的 X/Z
+                        Vec3 newPosition = new Vec3(currentPos.x, baselineY, currentPos.z);
+                        BlockPos blockPos = BlockPos.containing(newPosition.x, newPosition.y, newPosition.z);
+                        setCameraField(camera, "position", newPosition);
+                        setCameraField(camera, "blockPosition", blockPos);
+                        debugChatThrottled("CameraView fixed Y: " + String.format("%.2f", baselineY) + " | orig=" + String.format("%.2f", currentPos.y));
+                    }
+                } catch (Exception e) {
+                    debugChat("CameraView update FAILED: " + e.getClass().getSimpleName());
+                }
+            }
+            return;
+        }
+
+        // 否则检查 FreeCam 模块
         if (FreeCam.INSTANCE == null || !FreeCam.INSTANCE.isEnabled()) {
             return;
         }
@@ -69,10 +90,40 @@ public class CameraPatch {
             BlockPos blockPos = BlockPos.containing(freeCamPosition.x, freeCamPosition.y, freeCamPosition.z);
             setCameraField(camera, "position", freeCamPosition);
             setCameraField(camera, "blockPosition", blockPos);
-            debugChatThrottled("camera position updated");
+            debugChatThrottled("FreeCam applied");
         } catch (Exception e) {
-            debugChat("camera update FAILED: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            debugChat("FreeCam update FAILED: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * 额外的注入点：尝试在其他地方也进行拦截
+     */
+    @Inject(
+            method = "setPosition",
+            desc = "(DDD)V",
+            at = @At(At.Type.HEAD)
+    )
+    public static void onSetPosition(Camera camera, double x, double y, double z, CallbackInfo callbackInfo) {
+        if (!ZenClient.isReady()) {
+            return;
+        }
+
+        // 如果 CameraView 启用，覆盖 Y 坐标
+        if (CameraView.INSTANCE != null && CameraView.INSTANCE.isEnabled() && CameraView.INSTANCE.shouldApplyView()) {
+            Double baselineY = CameraView.INSTANCE.getBaselineY();
+            if (baselineY != null) {
+                try {
+                    // 获取反射字段并直接修改
+                    setCameraField(camera, "position", new Vec3(x, baselineY, z));
+                    debugChatThrottled("CameraView intercepted setPosition, fixed Y: " + String.format("%.2f", baselineY));
+                    callbackInfo.cancel();  // 取消原方法
+                } catch (Exception e) {
+                    // 如果出错就让原方法继续执行
+                    debugChat("CameraView setPosition interception FAILED: " + e.getClass().getSimpleName());
+                }
+            }
         }
     }
 
@@ -94,5 +145,24 @@ public class CameraPatch {
         }
         field.setAccessible(true);
         field.set(camera, value);
+    }
+
+    private static Object getFieldValue(Camera camera, String fieldName) throws Exception {
+        Field field = null;
+        try {
+            field = Camera.class.getDeclaredField(fieldName);
+        } catch (NoSuchFieldException ignored) {
+            for (Field f : Camera.class.getDeclaredFields()) {
+                if (f.getName().equals(fieldName)) {
+                    field = f;
+                    break;
+                }
+            }
+            if (field == null) {
+                throw new NoSuchFieldException(fieldName);
+            }
+        }
+        field.setAccessible(true);
+        return field.get(camera);
     }
 }
