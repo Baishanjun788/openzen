@@ -166,6 +166,7 @@ public class ZenClient extends ClientBase {
         PatchRegistry.register(ClientLevelPatch.class);
         PatchRegistry.register(ConnectionPatch.class);
         PatchRegistry.register(PacketUtilsPatch.class);
+        PatchRegistry.register(DisconnectedScreenPatch.class);
         PatchRegistry.register(KeyboardHandlerPatch.class);
         PatchRegistry.register(KeyboardInputPatch.class);
         PatchRegistry.register(ChatScreenPatch.class);

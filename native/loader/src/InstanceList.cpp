@@ -44,8 +44,8 @@ InstanceList::InstanceList(QWidget* parent)
     containerLayout_->setSpacing(0);
 
     emptyLabel_ = new QLabel(
-        QStringLiteral("No Minecraft instances detected.\n"
-                       "Start the game and it will show up here."),
+        QStringLiteral("没有找到可供注入的 Minecraft 进程\n"
+                       "启动 Minecraft 后请等待几秒钟，列表会自动刷新"),
         container_);
     emptyLabel_->setAlignment(Qt::AlignCenter);
     emptyLabel_->setStyleSheet(QStringLiteral(

@@ -1,6 +1,7 @@
 #include "InjectionOverlay.h"
 
 #include "loader.h"
+#include "theme.h"
 
 #include <QApplication>
 #include <QEasingCurve>
@@ -97,8 +98,8 @@ void InjectionOverlay::onInjectResult(QString err) {
     if (progressAnim_) progressAnim_->stop();
 
     statusText_ = injectOk_
-        ? QStringLiteral("Injection complete")
-        : QStringLiteral("Injection failed: ") + injectErr_;
+        ? QStringLiteral("注入成功，火速吊打！")
+        : QStringLiteral("注入失败，你个废物 ") + injectErr_;
     update();
 
     // Finish progress bar quickly, then animate the success/failure mark
@@ -145,18 +146,19 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
     panel.addRoundedRect(rect, kCornerRadius, kCornerRadius);
     p.setClipPath(panel);
 
+    const auto& pal = theme::currentPalette();
     // Background.
     QLinearGradient bg(rect.topLeft(), rect.bottomLeft());
-    bg.setColorAt(0.0, QColor("#1a1c22"));
-    bg.setColorAt(1.0, QColor("#0e1014"));
+    bg.setColorAt(0.0, pal.overlayTop);
+    bg.setColorAt(1.0, pal.overlayBottom);
     p.fillRect(rect, bg);
 
     // Accent glow behind the spinner.
     {
         QRadialGradient glow(rect.center() - QPointF(0, 30),
                              rect.width() * 0.5);
-        glow.setColorAt(0.0, QColor(70, 130, 230, 90));
-        glow.setColorAt(1.0, QColor(70, 130, 230, 0));
+        glow.setColorAt(0.0, pal.overlayGlow);
+        glow.setColorAt(1.0, QColor(pal.overlayGlow.red(), pal.overlayGlow.green(), pal.overlayGlow.blue(), 0));
         p.fillRect(rect, glow);
     }
 
@@ -165,13 +167,13 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
     const qreal r = 26.0;
 
     if (!injectDone_) {
-        QPen ringPen(QColor(255, 255, 255, 30), 3);
+        QPen ringPen(pal.overlayRing, 3);
         ringPen.setCapStyle(Qt::FlatCap);
         p.setPen(ringPen);
         p.setBrush(Qt::NoBrush);
         p.drawEllipse(c, r, r);
 
-        QPen arcPen(QColor("#7fb0ff"), 3);
+        QPen arcPen(pal.overlayAccent, 3);
         arcPen.setCapStyle(Qt::RoundCap);
         p.setPen(arcPen);
         QRectF arcRect(c.x() - r, c.y() - r, r * 2, r * 2);
@@ -179,7 +181,7 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
         int spanAngle  = -120 * 16;
         p.drawArc(arcRect, startAngle, spanAngle);
     } else {
-        QColor accent = injectOk_ ? QColor("#3ecf6b") : QColor("#e25656");
+        QColor accent = injectOk_ ? pal.success : pal.error;
         p.setPen(Qt::NoPen);
         p.setBrush(accent);
         p.drawEllipse(c, r, r);
@@ -219,7 +221,7 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
         f.setPointSize(12);
         f.setBold(true);
         p.setFont(f);
-        p.setPen(QColor("#e3e7ef"));
+        p.setPen(pal.overlayText);
         QFontMetricsF fm(f);
         qreal tw = fm.horizontalAdvance(statusText_);
         p.drawText(QPointF(rect.center().x() - tw / 2, rect.top() + 140),
@@ -231,7 +233,7 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
         QFont f(QStringLiteral("Segoe UI"));
         f.setPointSize(9);
         p.setFont(f);
-        p.setPen(QColor("#8a90a0"));
+        p.setPen(pal.overlaySubtext);
         QFontMetricsF fm(f);
         QString sub = QStringLiteral("PID %1 · %2").arg(pid_).arg(target_);
         // Truncate overly long titles so the subtitle still fits inside
@@ -256,7 +258,7 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
         track.addRoundedRect(QRectF(pbL, pbY - pbH / 2, pbR - pbL, pbH),
                              pbH / 2, pbH / 2);
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(255, 255, 255, 22));
+        p.setBrush(pal.overlayTrack);
         p.drawPath(track);
 
         const qreal fillW = (pbR - pbL) * std::clamp(progress_, 0.0, 1.0);
@@ -266,11 +268,11 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
                                 pbH / 2, pbH / 2);
             QLinearGradient g(QPointF(pbL, 0), QPointF(pbR, 0));
             if (injectDone_ && !injectOk_) {
-                g.setColorAt(0.0, QColor("#e25656"));
-                g.setColorAt(1.0, QColor("#f08585"));
+                g.setColorAt(0.0, pal.error);
+                g.setColorAt(1.0, QColor(pal.error.red(), pal.error.green(), pal.error.blue(), 200));
             } else {
-                g.setColorAt(0.0, QColor("#3d6fd1"));
-                g.setColorAt(1.0, QColor("#7fb0ff"));
+                g.setColorAt(0.0, pal.overlayAccentAlt);
+                g.setColorAt(1.0, pal.overlayAccent);
             }
             p.setBrush(g);
             p.drawPath(fill);
@@ -279,7 +281,7 @@ void InjectionOverlay::paintEvent(QPaintEvent*) {
 
     // Border.
     p.setClipping(false);
-    p.setPen(QPen(QColor(255, 255, 255, 28), 1));
+    p.setPen(QPen(pal.overlayBorder, 1));
     p.setBrush(Qt::NoBrush);
     p.drawPath(panel);
 }

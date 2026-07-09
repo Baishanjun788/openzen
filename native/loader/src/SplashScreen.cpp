@@ -1,5 +1,7 @@
 #include "SplashScreen.h"
 
+#include "theme.h"
+
 #include <QApplication>
 #include <QEasingCurve>
 #include <QFont>
@@ -112,10 +114,11 @@ void SplashScreen::paintEvent(QPaintEvent*) {
     panel.addRoundedRect(rect, kCornerRadius, kCornerRadius);
     p.setClipPath(panel);
 
+    const auto& pal = theme::currentPalette();
     // Layered background: dark vertical gradient + accent glow.
     QLinearGradient bg(rect.topLeft(), rect.bottomLeft());
-    bg.setColorAt(0.0, QColor("#16181f"));
-    bg.setColorAt(1.0, QColor("#0a0b0e"));
+    bg.setColorAt(0.0, pal.splashTop);
+    bg.setColorAt(1.0, pal.splashBottom);
     p.fillRect(rect, bg);
 
     // Accent glow behind the wordmark; pulses with glowPulse_.
@@ -123,9 +126,9 @@ void SplashScreen::paintEvent(QPaintEvent*) {
         qreal r = rect.width() * (0.45 + 0.07 * glowPulse_);
         QRadialGradient glow(rect.center() + QPointF(0, -4), r);
         int peak = static_cast<int>(120 * (0.45 + 0.55 * glowPulse_));
-        glow.setColorAt(0.0, QColor(85, 135, 235, peak));
-        glow.setColorAt(0.7, QColor(85, 135, 235, peak / 4));
-        glow.setColorAt(1.0, QColor(85, 135, 235, 0));
+        glow.setColorAt(0.0, QColor(pal.splashGlow.red(), pal.splashGlow.green(), pal.splashGlow.blue(), peak));
+        glow.setColorAt(0.7, QColor(pal.splashGlow.red(), pal.splashGlow.green(), pal.splashGlow.blue(), peak / 4));
+        glow.setColorAt(1.0, QColor(pal.splashGlow.red(), pal.splashGlow.green(), pal.splashGlow.blue(), 0));
         p.fillRect(rect, glow);
     }
 
@@ -148,9 +151,9 @@ void SplashScreen::paintEvent(QPaintEvent*) {
         p.scale(logoScale_, logoScale_);
         p.setOpacity(logoOpacity_);
         // Soft drop shadow for legibility against the glow.
-        p.setPen(QColor(0, 0, 0, 90));
+        p.setPen(pal.splashShadow);
         p.drawText(QPointF(-textW / 2.0 + 1, textH / 2.0 - 6 + 1), text);
-        p.setPen(QColor("#ffffff"));
+        p.setPen(pal.splashText);
         p.drawText(QPointF(-textW / 2.0,     textH / 2.0 - 6),     text);
         p.restore();
     }
@@ -163,20 +166,20 @@ void SplashScreen::paintEvent(QPaintEvent*) {
         const qreal trackR  = rect.right()  - 70;
         const qreal trackW  = trackR - trackL;
 
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1));
+        p.setPen(QPen(pal.splashTrack, 1));
         p.drawLine(QPointF(trackL, trackY), QPointF(trackR, trackY));
 
         const qreal headX = trackL + trackW * scanProgress_;
         const qreal tailStart = std::max(headX - 140.0, trackL);
         QLinearGradient trail(QPointF(tailStart, 0), QPointF(headX, 0));
-        trail.setColorAt(0.0, QColor(80, 130, 230, 0));
-        trail.setColorAt(1.0, QColor(130, 180, 255, 230));
+        trail.setColorAt(0.0, QColor(pal.splashGlow.red(), pal.splashGlow.green(), pal.splashGlow.blue(), 0));
+        trail.setColorAt(1.0, pal.splashTrail);
         p.setPen(QPen(QBrush(trail), 2));
         p.drawLine(QPointF(tailStart, trackY), QPointF(headX, trackY));
 
         // Bright "head" dot.
         p.setPen(Qt::NoPen);
-        p.setBrush(QColor(180, 210, 255, 230));
+        p.setBrush(pal.splashDot);
         p.drawEllipse(QPointF(headX, trackY), 3.5, 3.5);
     }
 

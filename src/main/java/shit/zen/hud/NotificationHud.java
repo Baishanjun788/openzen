@@ -3,6 +3,7 @@ package shit.zen.hud;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import net.minecraft.sounds.SoundEvents;
 import shit.zen.event.impl.GlRenderEvent;
 import shit.zen.event.impl.Render2DEvent;
 import shit.zen.event.impl.TickEvent;
@@ -34,28 +35,33 @@ extends HudElement {
         final boolean enabled;
         final long createdAt = System.currentTimeMillis();
         boolean removing = false;
-        final SmoothAnimationTimer slideAnim = new SmoothAnimationTimer();
+        final SmoothAnimationTimer slideYAnim = new SmoothAnimationTimer();
         final SmoothAnimationTimer alphaAnim = new SmoothAnimationTimer();
+        final SmoothAnimationTimer stackAnim = new SmoothAnimationTimer();
+        float targetStackY = 0.0f;
+        boolean stackTargetInitialized = false;
 
         Toast(String moduleName, boolean enabled) {
             this.moduleName = moduleName;
             this.enabled = enabled;
-            this.slideAnim.setCurrentValue(50.0);
+            this.slideYAnim.setCurrentValue(10.0);
             this.alphaAnim.setCurrentValue(0.0);
-            this.slideAnim.animate(0.0, 0.25, Easings.EASE_OUT_POW3);
+            this.stackAnim.setCurrentValue(0.0);
+            this.slideYAnim.animate(0.0, 0.25, Easings.EASE_OUT_POW3);
             this.alphaAnim.animate(1.0, 0.25, Easings.EASE_OUT_POW3);
         }
 
         void startRemove() {
             if (this.removing) return;
             this.removing = true;
-            this.slideAnim.animate(50.0, 0.25, Easings.EASE_IN_POW3);
+            this.slideYAnim.animate(12.0, 0.25, Easings.EASE_IN_POW3);
             this.alphaAnim.animate(0.0, 0.25, Easings.EASE_IN_POW3);
         }
 
         void tick() {
-            this.slideAnim.tick();
+            this.slideYAnim.tick();
             this.alphaAnim.tick();
+            this.stackAnim.tick();
         }
 
         boolean isDone() {
@@ -70,6 +76,8 @@ extends HudElement {
     private final Paint accentPaint = new Paint();
     private final Paint textPaint = new Paint();
     private boolean positionInitialized = false;
+    private float lastScreenWidth = 0.0f;
+    private float lastScreenHeight = 0.0f;
 
     public NotificationHud() {
         super("Notification");
@@ -89,20 +97,32 @@ extends HudElement {
         if (mc == null || mc.player == null) return;
         if (module == null || module.getName() == null || module.getName().isEmpty()) return;
         if (module instanceof NotificationHud) return;
+
+        if (enabled) {
+            mc.player.playSound(SoundEvents.NOTE_BLOCK_BIT.get(), 1.0F, 1.0F);
+        } else {
+            mc.player.playSound(SoundEvents.NOTE_BLOCK_BASS.get(), 1.0F, 1.0F);
+        }
+
         INSTANCE.toasts.add(new Toast(module.getName(), enabled));
     }
 
     /**
      * 默认显示在右下角、稍微往上一点的位置（不是死死贴在屏幕最边缘）。
-     * 只在第一次渲染时计算一次，之后拖动过的话就用玩家自己拖的位置。
+     * 窗口大小改变时会自动重新计算位置。
      */
     private void initDefaultPosition() {
-        if (this.positionInitialized) return;
-        this.positionInitialized = true;
         float screenWidth = mc.getWindow().getGuiScaledWidth();
         float screenHeight = mc.getWindow().getGuiScaledHeight();
-        this.setX(screenWidth - 170.0f);
-        this.setY(screenHeight - 110.0f);
+        
+        // 检测窗口大小是否改变
+        if (!positionInitialized || Math.abs(screenWidth - lastScreenWidth) > 0.1f || Math.abs(screenHeight - lastScreenHeight) > 0.1f) {
+            positionInitialized = true;
+            lastScreenWidth = screenWidth;
+            lastScreenHeight = screenHeight;
+            this.setX(screenWidth - 170.0f);
+            this.setY(screenHeight - 28.0f);
+        }
     }
 
     @EventTarget
@@ -145,31 +165,36 @@ extends HudElement {
         float rowHeight = 22.0f;
         float rowGap = 4.0f;
         float rowWidth = 150.0f;
-        float cursorY = y;
 
-        for (Toast toast : visibleToasts) {
+        for (int i = 0; i < visibleToasts.size(); i++) {
+            Toast toast = visibleToasts.get(i);
             float alpha = toast.alphaAnim.getValueF();
             if (alpha <= 0.01f) {
-                cursorY += rowHeight + rowGap;
                 continue;
             }
-            float slideX = toast.slideAnim.getValueF();
-            float rowX = x + slideX;
+            float targetY = y - (float) i * (rowHeight + rowGap);
+            if (!toast.stackTargetInitialized || Math.abs(toast.targetStackY - targetY) > 0.1f) {
+                toast.stackTargetInitialized = true;
+                toast.targetStackY = targetY;
+                toast.stackAnim.animate(targetY, 0.16, Easings.EASE_OUT_QUAD);
+            }
+            float slideY = toast.slideYAnim.getValueF();
+            float rowY = toast.stackAnim.getValueF() + slideY;
 
             this.bgPaint.setColor(ColorUtil.fromARGB(0, 0, 0, (int) (170.0f * alpha)));
-            GlHelper.drawRoundedRect(rowX, cursorY, rowWidth, rowHeight, 5.0f, this.bgPaint);
+            GlHelper.drawRoundedRect(x, rowY, rowWidth, rowHeight, 5.0f, this.bgPaint);
 
             // 左侧一条小色块：开=绿色，关=灰红色
             int accentColor = toast.enabled
                     ? ColorUtil.fromARGB(80, 220, 120, (int) (255.0f * alpha))
                     : ColorUtil.fromARGB(220, 80, 80, (int) (255.0f * alpha));
             this.accentPaint.setColor(accentColor);
-            GlHelper.drawRoundedRect(rowX + 4.0f, cursorY + 4.0f, 3.0f, rowHeight - 8.0f, 1.5f, this.accentPaint);
+            GlHelper.drawRoundedRect(x + 4.0f, rowY + 4.0f, 3.0f, rowHeight - 8.0f, 1.5f, this.accentPaint);
 
             int nameColor = ColorUtil.fromARGB(255, 255, 255, (int) (255.0f * alpha));
             this.textPaint.setColor(nameColor);
-            float nameY = cursorY + (rowHeight - (float) GlHelper.getFontAscent(this.nameFont)) / 2.0f;
-            GlHelper.drawTextWithShadow(toast.moduleName, rowX + 11.0f, nameY, this.nameFont, this.textPaint);
+            float nameY = rowY + (rowHeight - (float) GlHelper.getFontAscent(this.nameFont)) / 2.0f;
+            GlHelper.drawTextWithShadow(toast.moduleName, x + 11.0f, nameY, this.nameFont, this.textPaint);
 
             String stateText = toast.enabled ? "已开启" : "已关闭";
             int stateColor = toast.enabled
@@ -177,14 +202,13 @@ extends HudElement {
                     : ColorUtil.fromARGB(235, 150, 150, (int) (255.0f * alpha));
             this.textPaint.setColor(stateColor);
             float stateWidth = GlHelper.getStringWidth(stateText, this.stateFont);
-            float stateY = cursorY + (rowHeight - (float) GlHelper.getFontAscent(this.stateFont)) / 2.0f;
-            GlHelper.drawTextWithShadow(stateText, rowX + rowWidth - stateWidth - 8.0f, stateY, this.stateFont, this.textPaint);
-
-            cursorY += rowHeight + rowGap;
+            float stateY = rowY + (rowHeight - (float) GlHelper.getFontAscent(this.stateFont)) / 2.0f;
+            GlHelper.drawTextWithShadow(stateText, x + rowWidth - stateWidth - 8.0f, stateY, this.stateFont, this.textPaint);
         }
 
+        float totalHeight = Math.max(0.0f, visibleToasts.size() * rowHeight + Math.max(0, visibleToasts.size() - 1) * rowGap);
         this.setWidth(rowWidth);
-        this.setHeight(cursorY - y);
+        this.setHeight(totalHeight);
     }
 
     @Override

@@ -4,6 +4,7 @@
 #include "InstanceList.h"
 #include "TitleBar.h"
 #include "loader.h"
+#include "theme.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -12,6 +13,7 @@
 #include <QLabel>
 #include <QLinearGradient>
 #include <QPainter>
+#include <QFont>
 #include <QPainterPath>
 #include <QParallelAnimationGroup>
 #include <QPropertyAnimation>
@@ -160,36 +162,40 @@ void MainWindow::buildUi() {
 }
 
 void MainWindow::styleApp() {
-    // Modern dark palette via QSS. The MainWindow background is painted in
-    // paintEvent (rounded panel) so we don't set a background colour on
-    // QMainWindow/QWidget directly here.
-    static const char* kQss = R"qss(
+    const auto& pal = theme::currentPalette();
+    QString qss = QString::fromUtf8(R"qss(
         QWidget#body {
             background: transparent;
-            color: #e3e5ea;
+            color: %1;
             font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
             font-size: 13px;
         }
         QLabel#title {
             font-size: 18px;
             font-weight: 600;
-            color: #ffffff;
+            color: %2;
             padding: 2px 0 0 2px;
         }
         QLabel#hint {
-            color: #8a8e98;
+            color: %3;
             font-size: 12px;
             padding-left: 2px;
         }
         QLabel#status {
-            color: #c2c6cf;
+            color: %4;
             padding: 7px 11px;
-            border: 1px solid #2c2e35;
+            border: 1px solid %5;
             border-radius: 7px;
-            background: rgba(35, 37, 43, 200);
+            background: %6;
         }
-    )qss";
-    qApp->setStyleSheet(QString::fromUtf8(kQss));
+    )qss")
+        .arg(theme::hex(pal.bodyText))
+        .arg(theme::hex(pal.titleText))
+        .arg(theme::hex(pal.hintText))
+        .arg(theme::hex(pal.statusText))
+        .arg(theme::hex(pal.statusBorder))
+        .arg(theme::rgba(pal.statusBackground, pal.statusBackground.alpha()));
+    qApp->setStyleSheet(qss);
 }
 
 void MainWindow::enableWin11RoundedCorners() {
@@ -217,12 +223,23 @@ void MainWindow::paintEvent(QPaintEvent*) {
     QPainterPath panel;
     panel.addRoundedRect(r, kCornerRadius, kCornerRadius);
 
+    const auto& pal = theme::currentPalette();
     QLinearGradient bg(r.topLeft(), r.bottomLeft());
-    bg.setColorAt(0.0, QColor("#1f2127"));
-    bg.setColorAt(1.0, QColor("#15171c"));
+    bg.setColorAt(0.0, pal.windowTop);
+    bg.setColorAt(1.0, pal.windowBottom);
     p.fillPath(panel, bg);
 
-    p.setPen(QPen(QColor(255, 255, 255, 26), 1));
+    p.setOpacity(0.16);
+    QFont watermarkFont = p.font();
+    watermarkFont.setFamily(QStringLiteral("Segoe UI"));
+    watermarkFont.setPointSize(72);
+    watermarkFont.setBold(true);
+    p.setFont(watermarkFont);
+    p.setPen(QColor(255, 255, 255, 48));
+    p.drawText(rect().adjusted(0, 0, 0, 0), Qt::AlignCenter, QStringLiteral("ZENAMX"));
+    p.setOpacity(1.0);
+
+    p.setPen(QPen(pal.windowBorder, 1));
     p.setBrush(Qt::NoBrush);
     p.drawPath(panel);
 }

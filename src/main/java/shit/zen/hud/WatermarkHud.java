@@ -50,11 +50,11 @@ public class WatermarkHud
     private static final float gapAroundSeparator = 12.0f;
     private static final float gapAfterIcon = 6.0f;
 
-    // 由于 logoFont(自定义 newzamx)和 wordmarkFont 的 capHeight 度量与实际字形视觉高度存在偏差，
-    // 导致居中计算后整体偏下，这里单独做垂直校正（负值 = 往上移）。
-    // 数值已按“Z 偏差更明显”做了差异化处理，如仍有偏差可继续微调。
-    private static final float logoYCorrection = -1.0f;
-    private static final float wordmarkYCorrection = -0.5f;
+    // 这里改成直接按像素偏移绘制，避免字体度量的居中计算把偏移“吞掉”。
+    // 正值会让内容整体向下移动，数值越大越明显。
+    private static final float logoYCorrection = 5.0f;
+    private static final float wordmarkYCorrection = 1.0f;
+    private static final float separatorYCorrection = 1.5f;
 
     private int lastTick = -1;
     private String usernameText;
@@ -112,14 +112,14 @@ public class WatermarkHud
 
         try (Paint paint = new Paint()) {
             // Logo + 客户端名字
-            this.drawText(drawContext, paint, "Z", drawX, centerY + logoYCorrection, logoFont, textColor, shadow, true);
+            this.drawText(drawContext, paint, "Z", drawX, centerY + logoYCorrection, logoFont, textColor, shadow, false);
             drawX += logoWidth + gapAfterLogo;
-            this.drawText(drawContext, paint, CLIENT_NAME, drawX, centerY + wordmarkYCorrection, wordmarkFont, textColor, shadow, true);
+            this.drawText(drawContext, paint, CLIENT_NAME, drawX, centerY + wordmarkYCorrection, wordmarkFont, textColor, shadow, false);
             drawX += wordmarkWidth;
 
             // 分隔符
             drawX += gapAroundSeparator;
-            this.drawText(drawContext, paint, "|", drawX, centerY, separatorFont, subColor, shadow, true);
+            this.drawText(drawContext, paint, "|", drawX, centerY + separatorYCorrection, separatorFont, subColor, shadow, true);
             drawX += separatorWidth + gapAroundSeparator;
 
             // 人形图标 + 用户名(上) / 版本号(下)
@@ -133,10 +133,8 @@ public class WatermarkHud
 
             // 分隔符
             drawX += gapAroundSeparator;
-            this.drawText(drawContext, paint, "|", drawX, centerY, separatorFont, subColor, shadow, true);
+            this.drawText(drawContext, paint, "|", drawX, centerY + separatorYCorrection, separatorFont, subColor, shadow, true);
             drawX += separatorWidth + gapAroundSeparator;
-
-            // 手柄图标 + 服务器/单机(上) / 延迟(下)
             this.drawText(drawContext, paint, GAMEPAD_ICON, drawX, centerY, iconFont, subColor, shadow, true);
             drawX += gamepadIconWidth + gapAfterIcon;
             float serverX = drawX + (this.gamepadBlockWidth - this.serverWidth) / 2.0f;

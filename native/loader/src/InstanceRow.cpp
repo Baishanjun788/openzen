@@ -1,5 +1,7 @@
 #include "InstanceRow.h"
 
+#include "theme.h"
+
 #include <QEasingCurve>
 #include <QEnterEvent>
 #include <QHBoxLayout>
@@ -19,28 +21,28 @@ constexpr int kCornerRadius = 9;
 const char* kInjectBtnQss = R"qss(
     QPushButton {
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                    stop:0 #4a83e0, stop:1 #3260bd);
+                                    stop:0 %1, stop:1 %2);
         color: white;
-        border: 1px solid rgba(255, 255, 255, 22);
+        border: 1px solid %3;
         border-radius: 6px;
-        padding: 6px 18px;
+        padding: 6px 14px;
         font-weight: 600;
         font-size: 12px;
         font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
     }
     QPushButton:hover {
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                    stop:0 #5a93f0, stop:1 #4275d8);
-        border: 1px solid rgba(255, 255, 255, 60);
+                                    stop:0 %4, stop:1 %5);
+        border: 1px solid %6;
     }
     QPushButton:pressed {
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                    stop:0 #2c5db0, stop:1 #1e468f);
+                                    stop:0 %7, stop:1 %8);
     }
     QPushButton:disabled {
-        background: #2c2f37;
-        color: #6a6f7a;
-        border: 1px solid #2c2f37;
+        background: %9;
+        color: %10;
+        border: 1px solid %11;
     }
 )qss";
 } // namespace
@@ -57,26 +59,31 @@ InstanceRow::InstanceRow(unsigned long pid, const QString& title, QWidget* paren
     layout->setContentsMargins(14, 6, 12, 6);
     layout->setSpacing(12);
 
+    const auto& pal = theme::currentPalette();
     pidLabel_ = new QLabel(QString::number(pid_), this);
     pidLabel_->setMinimumWidth(72);
     pidLabel_->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     pidLabel_->setStyleSheet(QStringLiteral(
-        "color: #9aa3b2;"
+        "color: %1;"
         "font-family: 'JetBrains Mono', 'Consolas', 'Segoe UI', monospace;"
-        "font-size: 12px; font-weight: 600;"));
+        "font-size: 12px; font-weight: 600;").arg(theme::hex(pal.instanceRowPidText)));
     layout->addWidget(pidLabel_);
 
     titleLabel_ = new QLabel(title_, this);
     titleLabel_->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
     titleLabel_->setStyleSheet(QStringLiteral(
-        "color: #e7eaf2; font-size: 13px;"
-        "font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;"));
+        "color: %1; font-size: 13px;"
+        "font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;").arg(theme::hex(pal.instanceRowTitleText)));
     titleLabel_->setTextInteractionFlags(Qt::NoTextInteraction);
     layout->addWidget(titleLabel_, 1);
 
-    injectBtn_ = new QPushButton(QStringLiteral("Inject"), this);
+    injectBtn_ = new QPushButton(QStringLiteral("出击"), this);
     injectBtn_->setCursor(Qt::PointingHandCursor);
-    injectBtn_->setStyleSheet(QString::fromUtf8(kInjectBtnQss));
+    injectBtn_->setStyleSheet(QString::fromUtf8(kInjectBtnQss)
+        .arg(theme::hex(pal.buttonTop), theme::hex(pal.buttonBottom), theme::rgba(pal.instanceRowOutline, 22),
+             theme::hex(pal.buttonHoverTop), theme::hex(pal.buttonHoverBottom), theme::rgba(pal.instanceRowOutline, 60),
+             theme::hex(pal.buttonPressedTop), theme::hex(pal.buttonPressedBottom),
+             theme::hex(pal.buttonDisabledBg), theme::hex(pal.buttonDisabledText), theme::hex(pal.buttonDisabledBorder)));
     injectBtn_->setFixedHeight(30);
     connect(injectBtn_, &QPushButton::clicked, this, [this] {
         emit injectClicked(pid_, title_);
@@ -158,17 +165,18 @@ void InstanceRow::paintEvent(QPaintEvent*) {
 
     // Base fill is the dimmest; hoverIntensity_ blends in a brighter
     // gradient on top.
+    const auto& pal = theme::currentPalette();
     QLinearGradient base(rect.topLeft(), rect.bottomLeft());
-    base.setColorAt(0.0, QColor(38, 41, 48, int(255 * panelAlpha)));
-    base.setColorAt(1.0, QColor(30, 32, 38, int(255 * panelAlpha)));
+    base.setColorAt(0.0, QColor(pal.instanceRowBaseTop.red(), pal.instanceRowBaseTop.green(), pal.instanceRowBaseTop.blue(), int(255 * panelAlpha)));
+    base.setColorAt(1.0, QColor(pal.instanceRowBaseBottom.red(), pal.instanceRowBaseBottom.green(), pal.instanceRowBaseBottom.blue(), int(255 * panelAlpha)));
     p.fillPath(panel, base);
 
     if (hoverIntensity_ > 0.001) {
         QLinearGradient hover(rect.topLeft(), rect.bottomLeft());
         hover.setColorAt(0.0,
-            QColor(74, 131, 224, int(38 * hoverIntensity_ * panelAlpha)));
+            QColor(pal.instanceRowHoverTop.red(), pal.instanceRowHoverTop.green(), pal.instanceRowHoverTop.blue(), int(pal.instanceRowHoverTop.alpha() * hoverIntensity_ * panelAlpha)));
         hover.setColorAt(1.0,
-            QColor(50, 96, 189, int(22 * hoverIntensity_ * panelAlpha)));
+            QColor(pal.instanceRowHoverBottom.red(), pal.instanceRowHoverBottom.green(), pal.instanceRowHoverBottom.blue(), int(pal.instanceRowHoverBottom.alpha() * hoverIntensity_ * panelAlpha)));
         p.fillPath(panel, hover);
     }
 
@@ -176,16 +184,16 @@ void InstanceRow::paintEvent(QPaintEvent*) {
     {
         QRectF stripe = rect;
         stripe.setRight(stripe.left() + 3);
-        QColor stripeCol(85, 135, 235,
-            int(60 + 160 * hoverIntensity_) * (panelAlpha < 0.999 ? panelAlpha : 1.0));
+        QColor stripeCol(pal.instanceRowStripe.red(), pal.instanceRowStripe.green(), pal.instanceRowStripe.blue(),
+            int((pal.instanceRowStripe.alpha() + 100 * hoverIntensity_) * (panelAlpha < 0.999 ? panelAlpha : 1.0)));
         QPainterPath sp;
         sp.addRoundedRect(stripe, 2.0, 2.0);
         p.fillPath(sp, stripeCol);
     }
 
     // Outline that brightens with hover.
-    QPen border(QColor(255, 255, 255,
-        int((22 + 36 * hoverIntensity_) * panelAlpha)), 1);
+    QPen border(QColor(pal.instanceRowOutline.red(), pal.instanceRowOutline.green(), pal.instanceRowOutline.blue(),
+        int((pal.instanceRowOutline.alpha() + 36 * hoverIntensity_) * panelAlpha)), 1);
     p.setPen(border);
     p.setBrush(Qt::NoBrush);
     p.drawPath(panel);

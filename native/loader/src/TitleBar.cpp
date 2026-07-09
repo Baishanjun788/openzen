@@ -1,5 +1,7 @@
 #include "TitleBar.h"
 
+#include "theme.h"
+
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -19,18 +21,18 @@ const char* kCommonBtnQss = R"qss(
     QToolButton {
         background: transparent;
         border: none;
-        color: #aab1bf;
+        color: %1;
         min-width: 46px;
         min-height: 38px;
         font-size: 14px;
         font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
     }
     QToolButton:hover {
-        background: rgba(255, 255, 255, 18);
-        color: #ffffff;
+        background: %2;
+        color: %3;
     }
     QToolButton:pressed {
-        background: rgba(255, 255, 255, 28);
+        background: %4;
     }
 )qss";
 
@@ -38,18 +40,18 @@ const char* kCloseBtnQss = R"qss(
     QToolButton {
         background: transparent;
         border: none;
-        color: #aab1bf;
+        color: %1;
         min-width: 46px;
         min-height: 38px;
         font-size: 14px;
         font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
     }
     QToolButton:hover {
-        background: #c0392b;
-        color: #ffffff;
+        background: %2;
+        color: %3;
     }
     QToolButton:pressed {
-        background: #8a2920;
+        background: %4;
     }
 )qss";
 } // namespace
@@ -71,10 +73,12 @@ TitleBar::TitleBar(QWidget* parent)
     dotSpacer->setFixedSize(16, 16);
     layout->addWidget(dotSpacer);
 
+    const auto& pal = theme::currentPalette();
     titleLabel_ = new QLabel(QStringLiteral("ZENAMX Loader"), this);
     titleLabel_->setStyleSheet(QStringLiteral(
-        "color: #e7ecf5; font-weight: 600; font-size: 12px;"
-        "font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;"));
+        "color: %1; font-weight: 600; font-size: 12px;"
+        "font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;")
+        .arg(theme::hex(pal.titleBarText)));
     layout->addWidget(titleLabel_);
 
     layout->addStretch(1);
@@ -82,7 +86,7 @@ TitleBar::TitleBar(QWidget* parent)
     minBtn_ = new QToolButton(this);
     minBtn_->setText(QStringLiteral("–"));   // en-dash for minimize
     minBtn_->setCursor(Qt::PointingHandCursor);
-    minBtn_->setStyleSheet(QString::fromUtf8(kCommonBtnQss));
+    minBtn_->setStyleSheet(QString::fromUtf8(kCommonBtnQss).arg(theme::hex(pal.titleBarMuted), theme::rgba(pal.titleBarButtonHover, 18), theme::hex(pal.titleBarText), theme::rgba(pal.titleBarButtonPressed, 28)));
     minBtn_->setToolTip(QStringLiteral("Minimize"));
     connect(minBtn_, &QToolButton::clicked, this, [this] {
         if (auto* w = window()) w->showMinimized();
@@ -92,7 +96,7 @@ TitleBar::TitleBar(QWidget* parent)
     closeBtn_ = new QToolButton(this);
     closeBtn_->setText(QStringLiteral("✕")); // multiplication sign
     closeBtn_->setCursor(Qt::PointingHandCursor);
-    closeBtn_->setStyleSheet(QString::fromUtf8(kCloseBtnQss));
+    closeBtn_->setStyleSheet(QString::fromUtf8(kCloseBtnQss).arg(theme::hex(pal.titleBarMuted), theme::hex(pal.titleBarCloseHover), theme::hex(pal.titleBarText), theme::hex(pal.titleBarClosePressed)));
     closeBtn_->setToolTip(QStringLiteral("Close"));
     connect(closeBtn_, &QToolButton::clicked, this, [this] {
         if (auto* w = window()) w->close();
@@ -139,9 +143,10 @@ void TitleBar::paintEvent(QPaintEvent*) {
 
     // Background: subtle top-down gradient, hairline at the bottom.
     QRect r = rect();
+    const auto& pal = theme::currentPalette();
     QLinearGradient bg(r.topLeft(), r.bottomLeft());
-    bg.setColorAt(0.0, QColor("#23252c"));
-    bg.setColorAt(1.0, QColor("#1b1d22"));
+    bg.setColorAt(0.0, pal.titleBarTop);
+    bg.setColorAt(1.0, pal.titleBarBottom);
     p.fillRect(r, bg);
     p.setPen(QColor(255, 255, 255, 14));
     p.drawLine(r.bottomLeft(), r.bottomRight());
@@ -153,9 +158,9 @@ void TitleBar::paintEvent(QPaintEvent*) {
     const qreal halo = 5.0 + 5.0 * pulse_;
     const int   haloA = static_cast<int>(40 + 80 * pulse_);
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(110, 200, 140, haloA));
+    p.setBrush(QColor(pal.scanHalo.red(), pal.scanHalo.green(), pal.scanHalo.blue(), haloA));
     p.drawEllipse(c, halo, halo);
-    p.setBrush(QColor(120, 230, 150));
+    p.setBrush(pal.scanCore);
     p.drawEllipse(c, 3.4, 3.4);
 }
 
