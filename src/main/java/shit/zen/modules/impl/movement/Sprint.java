@@ -1,11 +1,12 @@
 package shit.zen.modules.impl.movement;
 
+import shit.zen.event.EventTarget;
+import shit.zen.event.impl.RotationEvent;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
 import shit.zen.modules.impl.player.InventoryManager;
-import shit.zen.modules.impl.combat.WTap; // 确保导入了 WTap
-import shit.zen.event.EventTarget;
-import shit.zen.event.impl.MotionEvent;
+// 导入 WTap 模块
+import shit.zen.modules.impl.combat.WTap;
 
 public class Sprint extends Module {
 
@@ -15,39 +16,33 @@ public class Sprint extends Module {
     }
 
     @EventTarget
-    public void onMotion(MotionEvent e) {
-        if (!e.pre || mc.player == null || mc.options == null) return;
+    public void onRotation(RotationEvent event) {
+        if (mc.player == null) return;
 
-        // 1. 优先级最高：避让冲突逻辑
-        // 如果 InventoryManager 正在压制，或者 WTap 正在执行重置(needReset)
-        boolean isInventorySuppressing = (InventoryManager.INSTANCE != null && InventoryManager.INSTANCE.isSuppressingSprint());
-        boolean isWTapResetting = (WTap.INSTANCE != null && WTap.INSTANCE.isEnabled() && WTap.INSTANCE.isNeedReset());
-        boolean isGuiMoving = (GuiMove.INSTANCE != null && GuiMove.INSTANCE.isEnabled());
-
-        if (isInventorySuppressing || isWTapResetting || isGuiMoving) {
-            stopSprinting();
+        // 1. 如果箱子内移动正在执行动作，松开疾跑
+        if (GuiMove.INSTANCE.isEnabled() && InventoryManager.isPerformingAction) {
+            mc.options.keySprint.setDown(false);
             return;
         }
 
-        // 2. 正常逻辑：开启疾跑
-        mc.options.keySprint.setDown(true);
-        if (mc.options.toggleSprint() != null) {
-            mc.options.toggleSprint().set(false);
+        // ======= 2. 修复内鬼冲突核心 =======
+        // 如果 WTap 模块开启了，并且它正在执行断冲刺重置 (needReset 为 true)
+        // 自动疾跑在这个瞬间必须强制松开，否则会顶掉 WTap 的大击退判定
+        if (WTap.INSTANCE != null && WTap.INSTANCE.isEnabled() && WTap.INSTANCE.isNeedReset()) {
+            mc.options.keySprint.setDown(false);
+            return;
         }
+        // ===================================
+
+        // 正常情况下，死锁疾跑按键
+        mc.options.keySprint.setDown(true);
     }
 
     @Override
     public void onDisable() {
-        stopSprinting();
-        super.onDisable();
-    }
-
-    private void stopSprinting() {
-        if (mc.options != null) {
+        if (mc.player != null && mc.options != null) {
             mc.options.keySprint.setDown(false);
         }
-        if (mc.player != null) {
-            mc.player.setSprinting(false);
-        }
+        super.onDisable();
     }
 }

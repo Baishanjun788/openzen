@@ -13,7 +13,7 @@ import shit.zen.modules.impl.player.InventoryManager;
 import shit.zen.event.EventTarget;
 
 public class GuiMove
-extends Module {
+        extends Module {
     public static GuiMove INSTANCE;
     public GuiMove() {
         super("GuiMove", Category.MOVEMENT);
@@ -40,7 +40,9 @@ extends Module {
         if (mc.player == null) {
             return false;
         }
-
+        if (mc.player.containerMenu instanceof InventoryMenu) {
+            return InventoryManager.isPerformingAction;
+        }
         return false;
     }
 
