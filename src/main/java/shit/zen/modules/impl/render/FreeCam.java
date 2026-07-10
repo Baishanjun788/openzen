@@ -13,31 +13,6 @@ import shit.zen.settings.impl.NumberSetting;
 /**
  * 自由视角（Freecam）：开启后镜头可以脱离身体自由飞行，方便你在原地按按钮/拉杆的同时
  * 飞到别的角度去看红石线路的运行状态，人物本体不会跟着移动。
- *
- * 操作方式（跟创造模式飞行一样）：
- *   W/A/S/D  水平移动（按你视角朝向的水平方向飞，不管你往上/下看都不影响水平飞行）
- *   空格      往上飞
- *   Shift    往下飞
- *   鼠标      正常看方向，不受影响
- *
- * 实现原理：
- *   - StrafeEvent 是每 tick 拿到的"WASD 换算出来的移动量"，这里读出来用来推动一个独立的
- *     自由视角坐标（this.position），然后把这个事件的移动量清零再交还给游戏，这样真实玩家
- *     的移动输入就被"拦截"了，本体不会跟着走。
- *   - 真正把镜头挪到 this.position 这个位置，需要在 Camera.setup() 之后强制覆盖一次相机坐标，
- *     这部分逻辑在新增的 CameraPatch.java 里（这个模块本身不摸渲染，只负责算"镜头应该在哪"）。
- *
- * 注意：这个不是 noclip 意义上的"允许穿墙走路"，只是镜头位置脱离了身体，
- * 如果想要镜头也能穿过方块自由飞（而不是被"卡"在原地一样只是看向别处），
- * 这个实现天生就是这样的（镜头本来就不受碰撞箱限制），可以直接飞进方块里看内部结构。
- *
- * ============ 调试版本 ============
- * 加了几处 System.out.println，配合 CameraPatch 的调试输出一起看，用来定位问题：
- *   [FreeCam] onEnable called       -> 开关是否真的触发了 onEnable
- *   [FreeCam] onDisable called      -> 关闭时是否触发
- *   [FreeCam] onStrafe position=... -> 每 tick 坐标有没有在正确更新
- * 排查完之后记得删掉或换成项目自己的 logger（onStrafe 每 tick 都会打印，日志量会很大，
- * 建议只在怀疑坐标计算有问题时临时打开）。
  */
 public class FreeCam extends Module {
 
@@ -48,18 +23,12 @@ public class FreeCam extends Module {
     private Vec3 position;
     private Vec3 prevPosition;
     private int debugTickCounter = 0;
-    private CameraType previousCameraType = null;
 
     public FreeCam() {
         super("FreeCam", Category.RENDER);
         INSTANCE = this;
     }
 
-    /**
-     * 调试用：把消息直接发到游戏聊天栏，而不是打印到控制台/日志文件，
-     * 方便直接在游戏里看结果，不用去翻 latest.log。
-     * 排查完问题后记得删掉所有调用这个方法的地方。
-     */
     private void debugChat(String message) {
         ClientBase.logger.info("[FreeCam] {}", message);
     }
@@ -72,17 +41,7 @@ public class FreeCam extends Module {
             this.prevPosition = this.position;
             this.debugChat("initial position=" + this.position);
         }
-        try {
-            if (mc.options != null) {
-                this.previousCameraType = mc.options.getCameraType();
-                mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
-            }
-            if (mc.player != null) {
-                mc.player.setInvisible(false);
-            }
-        } catch (Throwable t) {
-            ClientBase.logger.warn("Failed to switch camera type for FreeCam: {}", t.toString());
-        }
+        // 删除了自动设置 THIRD_PERSON_BACK 的逻辑
     }
 
     @Override
@@ -90,18 +49,9 @@ public class FreeCam extends Module {
         this.debugChat("onDisable called");
         this.position = null;
         this.prevPosition = null;
-        try {
-            if (mc.options != null && this.previousCameraType != null) {
-                mc.options.setCameraType(this.previousCameraType);
-            }
-        } catch (Throwable t) {
-            ClientBase.logger.warn("Failed to restore camera type after FreeCam: {}", t.toString());
-        }
+        // 删除了恢复原视角的逻辑
     }
 
-    /**
-     * 供 CameraPatch 读取当前自由视角应该在的位置。
-     */
     public Vec3 getPosition() {
         return this.position;
     }
@@ -114,23 +64,15 @@ public class FreeCam extends Module {
 
     @EventTarget
     public void onStrafe(StrafeEvent event) {
-        // 整个方法体包一层 try-catch：
-        // 你的事件框架（OpenZen/asm.patchify）在调用这个方法出异常时，
-        // 日志里只打印了一行 "invocation target ... InvocationTargetException"，
-        // 没有打印 Caused by 的真实堆栈，等于把根因吞掉了。
-        // 这里自己兜底捕获，把真正的异常类型、消息、堆栈行数完整打印出来，
-        // 排查完问题后可以把这层 try-catch 去掉。
         try {
-            // record previous position for interpolation
             if (this.position != null) this.prevPosition = this.position;
             this.doStrafe(event);
         } catch (Throwable t) {
             this.debugChat("REAL EXCEPTION: " + t.getClass().getName() + ": " + t.getMessage());
-            // 堆栈行数比较多，聊天栏放不下，这里只发前 3 行到聊天栏，完整堆栈还是打印到控制台方便复制。
             StackTraceElement[] trace = t.getStackTrace();
-                for (int i = 0; i < Math.min(3, trace.length); i++) {
-                    ClientBase.logger.info("[FreeCam]   at {}", trace[i].toString());
-                }
+            for (int i = 0; i < Math.min(3, trace.length); i++) {
+                ClientBase.logger.info("[FreeCam]   at {}", trace[i].toString());
+            }
             t.printStackTrace();
         }
     }
@@ -145,17 +87,12 @@ public class FreeCam extends Module {
 
         float forward = event.getForward();
         float strafe = event.getStrafe();
-        // 这个事件里的字段名叫 isSprinting，但它实际对应的是跳跃键(空格)的按下状态
         boolean flyUp = event.isSprinting();
         boolean flyDown = mc.options.keyShift.isDown();
 
-        // speed.getValue() 返回的是 Float（不是 Double），直接 (double) 强转会因为
-        // 运行时类型不匹配抛 ClassCastException。这里统一转成 Number 再取 doubleValue()，
-        // 不管底层实际是 Float 还是 Double 都能正确处理。
         double moveSpeed = ((Number) this.speed.getValue()).doubleValue();
         double yawRad = Math.toRadians(mc.player.getYRot());
 
-        // 只用水平朝向算移动方向，抬头/低头不影响飞行平面，飞起来更好控制
         double forwardX = -Math.sin(yawRad);
         double forwardZ = Math.cos(yawRad);
         double strafeX = Math.cos(yawRad);
@@ -173,14 +110,12 @@ public class FreeCam extends Module {
 
         this.position = this.position.add(moveX, moveY, moveZ);
 
-        // 调试：坐标变化。每 tick 都发聊天栏会刷屏，这里节流成每 20 tick（约 1 秒）发一次。
         this.debugTickCounter++;
         if (this.debugTickCounter >= 20) {
             this.debugTickCounter = 0;
             this.debugChat("position=" + this.position + " forward=" + forward + " strafe=" + strafe + " flyUp=" + flyUp + " flyDown=" + flyDown);
         }
 
-        // 把这个tick的移动量清零，真实玩家本体就不会跟着走
         event.setForward(0.0f);
         event.setStrafe(0.0f);
         event.setSprinting(false);

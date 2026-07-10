@@ -17,13 +17,14 @@ import shit.zen.event.impl.MotionEvent;
 import shit.zen.event.impl.UpdateHeldItemEvent;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
+import shit.zen.modules.impl.combat.KillAura;
 import shit.zen.settings.impl.BooleanSetting;
 import shit.zen.event.EventTarget;
 
 public class AutoTools extends Module {
 
     private final BooleanSetting checkSword = new BooleanSetting("Check Sword", true);
-    private final BooleanSetting autoWeapon = new BooleanSetting("Auto Weapon", true); // 新增自动武器开关
+    private final BooleanSetting autoWeapon = new BooleanSetting("Auto Weapon", true);
     private final BooleanSetting switchBack = new BooleanSetting("Switch Back", true);
     private final BooleanSetting silent = new BooleanSetting("Silent", true);
 
@@ -50,35 +51,41 @@ public class AutoTools extends Module {
         if (mc.player == null || mc.level == null) return;
 
         if (motionEvent.isPre()) {
-            // 如果按住了左键（攻击/破坏键）
-            if (mc.options.keyAttack.isDown() && mc.hitResult != null) {
+            boolean isManuallyActing = mc.options.keyAttack.isDown() && mc.hitResult != null;
+            boolean isAuraAttacking = KillAura.INSTANCE != null
+                    && KillAura.INSTANCE.isEnabled()
+                    && KillAura.target != null;
 
-                int bestSlot = -1;
+            int bestSlot = -1;
 
-                // 场景 1：准星指着方块 -> 自动工具
-                if (mc.hitResult.getType() == HitResult.Type.BLOCK) {
-                    // 如果开启了 CheckSword，且当前手里拿着剑，则不切换（防止PVP时误切方块）
-                    if (this.checkSword.getValue() && mc.player.getMainHandItem().getItem() instanceof SwordItem) {
-                        return;
-                    }
+            // 🌟 优先级 1：玩家正在手动指着方块挖矿（最高优先级，覆盖 Aura）
+            if (isManuallyActing && mc.hitResult.getType() == HitResult.Type.BLOCK) {
+                if (this.checkSword.getValue() && mc.player.getMainHandItem().getItem() instanceof SwordItem) {
+                    // 防误触保护：拿剑时不切工具（若想随时随地切，请在界面关掉 Check Sword）
+                } else {
                     BlockPos pos = ((BlockHitResult) mc.hitResult).getBlockPos();
                     bestSlot = this.getBestTool(pos);
                 }
-                // 场景 2：准星指着实体(玩家/怪物) -> 自动武器
-                else if (mc.hitResult.getType() == HitResult.Type.ENTITY && this.autoWeapon.getValue()) {
-                    bestSlot = this.getBestWeapon();
-                }
+            }
+            // 🌟 优先级 2：KillAura 正在自动打人
+            else if (isAuraAttacking && this.autoWeapon.getValue()) {
+                bestSlot = this.getBestWeapon();
+            }
+            // 🌟 优先级 3：玩家手动指着实体打人
+            else if (isManuallyActing && mc.hitResult.getType() == HitResult.Type.ENTITY && this.autoWeapon.getValue()) {
+                bestSlot = this.getBestWeapon();
+            }
 
-                // 执行切换逻辑
-                if (bestSlot != -1 && bestSlot != mc.player.getInventory().selected) {
+            // 执行核心切换与回弹逻辑
+            if (bestSlot != -1) {
+                if (bestSlot != mc.player.getInventory().selected) {
                     if (this.previousSlot == -1) {
                         this.previousSlot = mc.player.getInventory().selected;
                     }
                     mc.player.getInventory().selected = bestSlot;
                 }
-
             } else {
-                // 如果松开了左键，且需要切回原来的物品
+                // 如果没有触发任何自动切槽需求（没在挖矿、也没在打人），执行回弹
                 if (this.switchBack.getValue() && this.previousSlot != -1) {
                     mc.player.getInventory().selected = this.previousSlot;
                     this.previousSlot = -1;
@@ -106,7 +113,8 @@ public class AutoTools extends Module {
             // 除了挖蜘蛛网，其他方块不考虑用剑挖
             if (itemStack.getItem() instanceof SwordItem && !(block instanceof WebBlock)) continue;
 
-            float destroySpeed = itemStack.getItem().getDestroySpeed(itemStack, blockState);
+            // 🌟 修复：使用更符合 1.20 特性的底层 API 获取破坏速度
+            float destroySpeed = itemStack.getDestroySpeed(blockState);
 
             if (destroySpeed > 1.0f) {
                 int efficiencyLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.BLOCK_EFFICIENCY, itemStack);
@@ -136,7 +144,6 @@ public class AutoTools extends Module {
 
             float damage = 1.0f;
 
-            // 1. 获取物品的基础攻击力 (通过解析主手属性)
             var modifiers = itemStack.getAttributeModifiers(EquipmentSlot.MAINHAND);
             if (modifiers.containsKey(Attributes.ATTACK_DAMAGE)) {
                 for (var modifier : modifiers.get(Attributes.ATTACK_DAMAGE)) {
@@ -144,14 +151,11 @@ public class AutoTools extends Module {
                 }
             }
 
-            // 2. 加上锋利附魔 (Sharpness) 带来的额外伤害
             int sharpnessLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.SHARPNESS, itemStack);
             if (sharpnessLevel > 0) {
-                // 1.20+ 锋利附魔伤害公式: 0.5 * level + 0.5
                 damage += 0.5f * sharpnessLevel + 0.5f;
             }
 
-            // 如果该武器伤害最高，则记录它
             if (damage > bestDamage) {
                 bestDamage = damage;
                 bestSlot = i;
