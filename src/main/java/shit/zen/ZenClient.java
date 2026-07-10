@@ -182,7 +182,8 @@ public class ZenClient extends ClientBase {
         PatchRegistry.register(ItemPatch.class);
         PatchRegistry.register(PlayerTabOverlayPatch.class);
         PatchRegistry.register(FriendlyByteBufPatch.class);
-
+        PatchRegistry.register(GuiPatch.class);
+        //PatchRegistry.register(DisconnectedScreenPatch.class);
         // Compatibility patch for Embeddium/Sodium's BlockOcclusionCache.
         // Always registered so the transformer can catch the class when it
         // first loads. We must NOT use Class.forName() here — that would

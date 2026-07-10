@@ -14,10 +14,7 @@ import shit.zen.modules.Module;
 import shit.zen.modules.impl.combat.*;
 import shit.zen.modules.impl.exploit.Disabler;
 import shit.zen.modules.impl.exploit.FastPlace;
-import shit.zen.modules.impl.misc.AimAssist;
-import shit.zen.modules.impl.misc.AutoClicker;
-import shit.zen.modules.impl.misc.AutoRod;
-import shit.zen.modules.impl.misc.SafeWalk;
+import shit.zen.modules.impl.misc.*;
 import shit.zen.modules.impl.movement.*;
 import shit.zen.modules.impl.player.*;
 import shit.zen.modules.impl.render.*;
@@ -43,6 +40,7 @@ public class ModuleManager extends ClientBase {
         this.register(new Critical());
         this.register(new CrystalAura());
         this.register(new KillAura());
+        this.register(new FakeLag());
 
         // Exploit
         this.register(new FreeCam());
@@ -54,6 +52,8 @@ public class ModuleManager extends ClientBase {
         this.register(new AutoClicker());
         this.register(new AutoRod());
         this.register(new SafeWalk());
+        this.register(new Protocol());
+        this.register(new MusicPlayer());
 
         // Movement
         this.register(new CollisionSpeed());
@@ -86,6 +86,7 @@ public class ModuleManager extends ClientBase {
 
         // Render
         this.register(new AspectRatio());
+        this.register(new LyricsModule());
         this.register(new CameraView());
         this.register(new ChestESP());
         this.register(new ClickGuiModule());

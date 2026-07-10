@@ -9,14 +9,7 @@ import shit.zen.event.impl.GlRenderEvent;
 import shit.zen.event.impl.Render2DEvent;
 import shit.zen.event.impl.TickEvent;
 import shit.zen.gui.IntroAnimation;
-import shit.zen.hud.HudElement;
-import shit.zen.hud.KeyBindsHud;
-import shit.zen.hud.LieDetector;
-import shit.zen.hud.ModuleListHud;
-import shit.zen.hud.NotificationHud;
-import shit.zen.hud.PlayerListHud;
-import shit.zen.hud.PotionEffectsHud;
-import shit.zen.hud.TargetHud;
+import shit.zen.hud.*;
 import shit.zen.event.EventTarget;
 
 public class HudManager {
@@ -34,6 +27,8 @@ public class HudManager {
         this.registerHudElement(new PotionEffectsHud());
         this.registerHudElement(new LieDetector());
         this.registerHudElement(new NotificationHud());
+        this.registerHudElement(new ScoreboardHud());
+        this.registerHudElement(new MusicPlayerHud());
     }
 
     private void registerHudElement(HudElement hudElement) {
