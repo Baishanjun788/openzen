@@ -41,6 +41,7 @@ public class ModuleManager extends ClientBase {
         this.register(new CrystalAura());
         this.register(new KillAura());
         this.register(new FakeLag());
+        this.register(new NotiSound());
 
         // Exploit
         this.register(new FreeCam());

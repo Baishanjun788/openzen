@@ -8,6 +8,7 @@ import shit.zen.event.impl.GlRenderEvent;
 import shit.zen.event.impl.Render2DEvent;
 import shit.zen.event.impl.TickEvent;
 import shit.zen.modules.Module;
+import shit.zen.modules.impl.misc.NotiSound;
 import shit.zen.render.FontPresets;
 import shit.zen.render.FontRenderer;
 import shit.zen.render.GlHelper;
@@ -98,10 +99,47 @@ extends HudElement {
         if (module == null || module.getName() == null || module.getName().isEmpty()) return;
         if (module instanceof NotificationHud) return;
 
-        if (enabled) {
-            mc.player.playSound(SoundEvents.NOTE_BLOCK_BIT.get(), 1.0F, 1.0F);
+        // 确保 NotiSound 实例已加载
+        if (NotiSound.INSTANCE != null) {
+            String mode = NotiSound.INSTANCE.getSoundMode();
+
+            // 统一转小写进行判断，防止大小写写错导致匹配不到
+            switch (mode.toLowerCase()) {
+                case "chenxx" -> {
+                    // 你原本的音效模式
+                    if (enabled) {
+                        mc.player.playSound(SoundEvents.NOTE_BLOCK_BIT.get(), 1.0F, 1.0F);
+                    } else {
+                        mc.player.playSound(SoundEvents.NOTE_BLOCK_BASS.get(), 1.0F, 1.0F);
+                    }
+                }
+                case "button" -> {
+                    // UI 按钮点击音效 (原版点按钮的声音)
+                    if (enabled) {
+                        mc.player.playSound(SoundEvents.UI_BUTTON_CLICK.get(), 1.0F, 1.0F);
+                    } else {
+                        mc.player.playSound(SoundEvents.UI_BUTTON_CLICK.get(), 1.0F, 0.8F); // 降调表示关闭
+                    }
+                }
+                case "experience" -> {
+                    // 🌟 新增：捡起经验球的清脆声音 (很多大牌 Client 都在用)
+                    if (enabled) {
+                        mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
+                    } else {
+                        mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0F, 0.7F); // 明显降调表示关闭
+                    }
+                }
+                case "none" -> {
+                    // 无音效模式，什么都不做直接留空即可
+                }
+            }
         } else {
-            mc.player.playSound(SoundEvents.NOTE_BLOCK_BASS.get(), 1.0F, 1.0F);
+            // 兜底保护：如果游戏刚启动，NotiSound 还没初始化就被调用了，就播放默认声音防崩溃
+            if (enabled) {
+                mc.player.playSound(SoundEvents.NOTE_BLOCK_BIT.get(), 1.0F, 1.0F);
+            } else {
+                mc.player.playSound(SoundEvents.NOTE_BLOCK_BASS.get(), 1.0F, 1.0F);
+            }
         }
 
         INSTANCE.toasts.add(new Toast(module.getName(), enabled));
