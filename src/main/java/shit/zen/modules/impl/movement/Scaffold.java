@@ -59,6 +59,7 @@ import shit.zen.event.EventTarget;
 public class Scaffold extends Module {
     public static Scaffold INSTANCE;
 
+
     public final ModeSetting mode = new ModeSetting("Mode", "Normal", "Telly Bridge", "Old Telly", "Keep Y").withDefault("Normal");
     public final BooleanSetting eagle = new BooleanSetting("Eagle", true, () -> this.mode.is("Normal"));
     public final BooleanSetting sneak = new BooleanSetting("Sneak", true);
