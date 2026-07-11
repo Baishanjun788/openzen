@@ -202,7 +202,7 @@ public class ModuleListHud
                 red2, green2, blue2, rainbowSpeed, rainbowSaturation, rainbowBrightness, rainbowOffset);
     }
 
-    public void registerSetting(Setting<?>... settings) {
+    private void registerSetting(Setting<?>... settings) {
         for (Setting<?> setting : settings) {
             this.addSetting(setting);
         }
@@ -241,21 +241,13 @@ public class ModuleListHud
         return rows;
     }
 
-
     private String displayName(Module module) {
         String name = module.getName();
         if (!this.showSuffix.getValue()) {
             return name;
         }
-        String suffix = module.getSuffix();
-        if (suffix == null || suffix.isBlank()) {
-            return name;
-        }
-        suffix = suffix.trim();
-        if (this.suffixLowercaseEnabled.getValue()) {
-            suffix = suffix.toLowerCase(Locale.ROOT);
-        }
-        return name + " " + suffix;
+        String suffix = module.getCategory() != null ? module.getCategory().name().toLowerCase(Locale.ROOT) : "";
+        return suffix.isEmpty() ? name : name + " " + suffix;
     }
 
     @Override
