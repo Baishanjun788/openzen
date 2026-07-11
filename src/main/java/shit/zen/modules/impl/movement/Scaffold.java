@@ -372,6 +372,8 @@ public class Scaffold extends Module {
     }
 
     private boolean isPlacementReachable(PlacementTarget target) {
+
+
         if (target == null || mc.player == null) return false;
         Vec3 blockCenter = new Vec3(target.position.getX() + 0.5, target.position.getY() + 0.5f, target.position.getZ() + 0.5);
         Vec3 hitPoint = blockCenter.add(new Vec3(
