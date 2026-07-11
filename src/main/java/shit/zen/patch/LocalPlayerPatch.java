@@ -18,7 +18,6 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 import shit.zen.ZenClient;
 import shit.zen.event.impl.GameTickEvent;
-import shit.zen.modules.impl.player.FollowPlayer;
 import shit.zen.event.impl.MotionEvent;
 import shit.zen.event.impl.SlowdownEvent;
 import shit.zen.event.impl.SprintEvent;
@@ -107,13 +106,6 @@ public class LocalPlayerPatch {
     public static void onAiStep(LocalPlayer player, CallbackInfo callbackInfo) throws Throwable {
         if (ZenClient.isReady()) {
             ZenClient.getInstance().getEventBus().call(new GameTickEvent());
-        }
-    }
-
-    @Inject(method = "aiStep", desc = "()V", at = @At(At.Type.HEAD))
-    public static void onAiStepFollow(LocalPlayer player, CallbackInfo callbackInfo) {
-        if (ZenClient.isReady() && FollowPlayer.INSTANCE != null && FollowPlayer.INSTANCE.isEnabled()) {
-            FollowPlayer.INSTANCE.updateFollowStateFromPatch();
         }
     }
 

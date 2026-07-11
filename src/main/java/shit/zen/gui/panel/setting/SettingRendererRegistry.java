@@ -8,7 +8,6 @@ import shit.zen.gui.panel.setting.ModeSettingRenderer;
 import shit.zen.gui.panel.setting.MultiSelectSettingRenderer;
 import shit.zen.gui.panel.setting.NumberSettingRenderer;
 import shit.zen.gui.panel.setting.SettingRenderer;
-import shit.zen.gui.panel.setting.StringSettingRenderer;
 import shit.zen.settings.Setting;
 import shit.zen.settings.impl.ModeSetting;
 
@@ -21,7 +20,6 @@ public class SettingRendererRegistry {
         this.register(new ModeSettingRenderer());
         this.register(new BooleanSettingRenderer());
         this.register(new NumberSettingRenderer());
-        this.register(new StringSettingRenderer());
         this.register(new MultiSelectSettingRenderer());
     }
 

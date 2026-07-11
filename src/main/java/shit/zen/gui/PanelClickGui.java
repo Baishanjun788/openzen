@@ -17,7 +17,6 @@ import shit.zen.gui.panel.ProfileWidget;
 import shit.zen.gui.panel.ScaleSwitchOverlay;
 import shit.zen.gui.panel.SettingsPanel;
 import shit.zen.gui.panel.setting.NumberSettingRenderer;
-import shit.zen.gui.panel.setting.StringSettingRenderer;
 import shit.zen.modules.Category;
 import shit.zen.modules.Module;
 import shit.zen.render.FontPresets;
@@ -326,9 +325,6 @@ extends Screen {
         if (NumberSettingRenderer.onKeyPress(keyCode, scanCode, modifiers)) {
             return true;
         }
-        if (StringSettingRenderer.onKeyPress(keyCode, scanCode, modifiers)) {
-            return true;
-        }
         if (keyCode == 256 && !this.keybindOverlay.isVisible() && !this.searchActive) {
             this.onClose();
             return true;
@@ -344,9 +340,6 @@ extends Screen {
             return true;
         }
         if (NumberSettingRenderer.onCharTyped(c)) {
-            return true;
-        }
-        if (StringSettingRenderer.onCharTyped(c)) {
             return true;
         }
         return super.charTyped(c, modifiers);
