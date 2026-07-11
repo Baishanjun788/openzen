@@ -28,11 +28,6 @@ extends ClientBase {
     private final List<Setting<?>> settings;
     private static final String REGISTER_FAIL_MSG = "Failed to register value for module ";
 
-    public void registerSetting(Setting<?>... settings) {
-        for (Setting<?> setting : settings) {
-            this.addSetting(setting);
-        }
-    }
     protected Module(String name, Category category) {
         this.name = name;
         this.category = category;
@@ -101,7 +96,4 @@ extends ClientBase {
         return this.keyCode;
     }
 
-    public String getSuffix() {
-        return null;
-    }
 }

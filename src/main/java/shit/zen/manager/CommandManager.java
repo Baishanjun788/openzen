@@ -6,6 +6,7 @@ import shit.zen.ZenClient;
 import shit.zen.command.Command;
 import shit.zen.command.impl.BindCommand;
 import shit.zen.command.impl.ConfigCommand;
+import shit.zen.command.impl.FollowPlayerCommand;
 import shit.zen.command.impl.LanguageCommand;
 import shit.zen.command.impl.ToggleCommand;
 import shit.zen.event.impl.ChatEvent;
@@ -23,6 +24,7 @@ public class CommandManager {
     public void initCommands() {
         this.registerCommand(new BindCommand());
         this.registerCommand(new ConfigCommand());
+        this.registerCommand(new FollowPlayerCommand());
         this.registerCommand(new LanguageCommand());
         this.registerCommand(new ToggleCommand());
     }
