@@ -18,5 +18,4 @@ OpenZENAMX是由开源的OpenZen经过大量修改得来，由鸡粑粑修改
 ## 致谢
 
 - 原OpenZen & Open Zen Ryorin1337‘s & OpenNilore & LiquidBounce & FDP & Xylitol
-- Claude Gemini
-- chenxx帮我改了一些
+- Claude Gemini chenxx（神必入）

@@ -4,17 +4,26 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import java.awt.Color;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.PriorityQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+import net.minecraft.network.protocol.game.ServerGamePacketListener;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
-import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items; // 新增：用于过滤蜘蛛网物品
+import net.minecraft.world.level.block.AirBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -40,7 +49,6 @@ import shit.zen.utils.game.MovementUtil;
 import shit.zen.utils.game.RayTraceUtil;
 import shit.zen.utils.game.RotationUtil;
 import shit.zen.utils.math.MathUtil;
-import shit.zen.utils.misc.ChatUtil;
 import shit.zen.utils.misc.PacketUtil;
 import shit.zen.utils.misc.ReflectionUtil;
 import shit.zen.utils.render.RenderUtil;
@@ -55,41 +63,29 @@ public class Scaffold extends Module {
     public final BooleanSetting eagle = new BooleanSetting("Eagle", true, () -> this.mode.is("Normal"));
     public final BooleanSetting sneak = new BooleanSetting("Sneak", true);
     public final BooleanSetting snap = new BooleanSetting("Snap", true, () -> this.mode.is("Normal"));
-    public final BooleanSetting smoothTelly = new BooleanSetting("Smooth", false, () -> this.mode.is("Telly Bridge"));
-    public final BooleanSetting interactBeforePlace = new BooleanSetting("Interact item before place", false);
-    public final NumberSetting rotationTick = new NumberSetting("Rotation Tick", 3, 1, 6, 1);
-    public final NumberSetting placeDelay = new NumberSetting("Place Delay", 1, 0, 5, 1);
     public final BooleanSetting renderItemSpoof = new BooleanSetting("Render Item Spoof", true);
-    public final BooleanSetting renderAimPoint = new BooleanSetting("Render Aim Point", false);
+    public final NumberSetting rotationTick = new NumberSetting("Rotation Tick", 3, 1, 6, 1);
     public final BooleanSetting clutch = new BooleanSetting("Clutch", true);
-    public final BooleanSetting clutchTestMode = new BooleanSetting("Clutch Verify target", false, () -> clutch.getValue());
 
     public Rotation correctRotation = new Rotation();
     public Rotation rots = new Rotation();
     public Rotation lastRots = new Rotation();
     public int targetYLevel = -1;
     public int velocityDelay = 0;
-    public boolean wantsRotation = false;
 
     private int oldSlot;
     private PlacementTarget currentPlacement;
-    private Vec3 hitVecSource;
-    private BlockPos lastPlacedBlock;
     private int eagleTimer;
     private int groundTicks = 0;
     private int airTicks = 0;
     private int rotationDelay = 0;
-
+    private final CopyOnWriteArrayList<CopyOnWriteArrayList<Packet<?>>> packetBatches = new CopyOnWriteArrayList<>();
     private int jitterCounter;
     private double yawDiff;
     private double pitchDiff;
     private double lastYawDiff = Double.NaN;
     private double lastPitchDiff = Double.NaN;
-    private Rotation tickRotationSnapshot;
-    private int placeDelayCounter;
     private boolean canBuildNow;
-    private boolean needsLookAdjustment;
-    private boolean jumpHeld = false;
 
     public Scaffold() {
         super("Scaffold", Category.MOVEMENT);
@@ -103,8 +99,6 @@ public class Scaffold extends Module {
             this.rots.setYawPitch(mc.player.getYRot() - 180.0f, mc.player.getXRot());
             this.lastRots.setYawPitch(mc.player.yRotO - 180.0f, mc.player.xRotO);
             this.currentPlacement = null;
-            this.hitVecSource = null;
-            this.lastPlacedBlock = null;
             this.targetYLevel = 10000;
             this.velocityDelay = 0;
             this.jitterCounter = 0;
@@ -112,12 +106,9 @@ public class Scaffold extends Module {
             this.pitchDiff = 0.0;
             this.lastYawDiff = Double.NaN;
             this.lastPitchDiff = Double.NaN;
-            this.tickRotationSnapshot = new Rotation();
             this.canBuildNow = true;
-            this.needsLookAdjustment = false;
-            this.wantsRotation = false;
-
-            this.jumpHeld = false;
+            this.packetBatches.clear();
+            this.packetBatches.add(new CopyOnWriteArrayList<>());
         }
         super.onEnable();
     }
@@ -125,7 +116,8 @@ public class Scaffold extends Module {
     @Override
     public void onDisable() {
         if (mc != null && mc.player != null) {
-
+            this.packetBatches.forEach(this::processBatchedPackets);
+            this.packetBatches.clear();
             boolean jumpDown = InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyJump.getKey().getValue());
             boolean shiftDown = InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyShift.getKey().getValue());
             mc.options.keyJump.setDown(jumpDown);
@@ -133,16 +125,17 @@ public class Scaffold extends Module {
             mc.options.keyUse.setDown(false);
             mc.player.getInventory().selected = this.oldSlot;
             this.canBuildNow = true;
-            this.needsLookAdjustment = false;
-            this.hitVecSource = null;
-            this.lastPlacedBlock = null;
-            this.wantsRotation = false;
-            this.jumpHeld = false;
             ClientBase.delayPackets.clear();
         }
         super.onDisable();
     }
 
+    private void processBatchedPackets(List<Packet<?>> batch) {
+        batch.forEach(packet -> {
+            batch.remove(packet);
+            PacketUtil.sendQueued((Packet<ServerGamePacketListener>) packet);
+        });
+    }
 
     @EventTarget
     public void onPacket(PacketEvent event) {
@@ -182,16 +175,19 @@ public class Scaffold extends Module {
             }
         }
     }
+
     @EventTarget(value = 1)
     public void onTick(TickEvent event) {
         if (mc.player == null) return;
+        this.packetBatches.add(new CopyOnWriteArrayList<>());
         if (this.velocityDelay > 0) this.velocityDelay--;
         if (mc.player.onGround() && this.velocityDelay <= 30) this.velocityDelay = 0;
 
         int placeableSlot = -1;
         for (int i = 0; i < 9; i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
-            if (stack.getItem() instanceof BlockItem && BlockUtil.isPlaceable(stack)) {
+            // 修改：加入 !stack.is(Items.COBWEB) 过滤掉蜘蛛网
+            if (stack.getItem() instanceof BlockItem && BlockUtil.isPlaceable(stack) && !stack.is(Items.COBWEB)) {
                 placeableSlot = i;
                 break;
             }
@@ -200,20 +196,7 @@ public class Scaffold extends Module {
             mc.player.getInventory().selected = placeableSlot;
         }
 
-        if (placeableSlot == -1) {
-            this.currentPlacement = null;
-            this.hitVecSource = null;
-            this.lastPlacedBlock = null;
-            this.eagleTimer = 0;
-            this.wantsRotation = false;
-            ClientBase.delayPackets.clear();
-            mc.options.keyJump.setDown(InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyJump.getKey().getValue()));
-            mc.options.keyShift.setDown(InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyShift.getKey().getValue()));
-            mc.options.keyUse.setDown(false);
-            return;
-        }
-
-        this.jumpHeld = InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyJump.getKey().getValue());
+        boolean jumpHeld = InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyJump.getKey().getValue());
         if (this.targetYLevel == -1
                 || this.targetYLevel > (int) Math.floor(mc.player.getY()) - 1
                 || mc.player.onGround()
@@ -224,16 +207,9 @@ public class Scaffold extends Module {
         }
 
         this.applyRotations();
-
-        if (this.currentPlacement != null) {
-            this.updateLookAtStatus();
-        }
-        // 只有存在实际放置目标时才接管转头，没目标/没方块就放开让头转回去
-        this.wantsRotation = this.currentPlacement != null;
-
         boolean firstGroundTick = false;
         this.canBuildNow = true;
-        if (this.currentPlacement != null) {
+        if (this.currentPlacement != null && placeableSlot != -1) {
             if (this.groundTicks == 1 && mc.options.keyJump.isDown()) {
                 firstGroundTick = true;
             }
@@ -253,15 +229,13 @@ public class Scaffold extends Module {
                 : this.getPlayerYawRotation();
 
         if (this.currentPlacement == null) {
-            this.hitVecSource = null;
             ClientBase.delayPackets.clear();
         } else if (this.clutch.getValue() && (!this.canBuildNow || this.velocityDelay > 0) && this.rotationDelay <= 8) {
-            Rotation rotationToBlock = this.hitVecSource != null ? RotationUtil.rotationFromVec(this.hitVecSource) : RotationUtil.rotationToBlock(this.currentPlacement.position, 1.0f);
+            Rotation rotationToBlock = RotationUtil.rotationToBlock(this.currentPlacement.position, 1.0f);
             Rotation previousTarget = RotationHandler.targetRotation;
             this.rots.setYawPitch(rotationToBlock.getYaw(), rotationToBlock.getPitch());
             RotationHandler.setTargetRotation(this.rots);
             this.rotationDelay++;
-
             ClientBase.delayPackets.add(() -> {});
             ClientBase.delayPackets.add(() -> {
                 RotationHandler.prevSentRotation.setYawPitch(rotationToBlock.getYaw(), rotationToBlock.getPitch());
@@ -289,11 +263,6 @@ public class Scaffold extends Module {
                 this.rots.setYaw(RotationUtil.moveTowards((float) this.getBlockDistance(), this.rots.getYaw(), this.correctRotation.getYaw()));
             }
             this.rots.setPitch(this.correctRotation.getPitch());
-
-            if (this.currentPlacement != null) {
-                this.adjustLookAtRotation();
-            }
-
             if (this.sneak.getValue()) {
                 this.eagleTimer++;
                 if (this.eagleTimer == 18) {
@@ -309,9 +278,7 @@ public class Scaffold extends Module {
             }
             if (this.mode.is("Telly Bridge") || this.mode.is("Old Telly")) {
                 mc.options.keyJump.setDown(MovementUtil.isMoving() || jumpHeld);
-                if (this.airTicks < 1
-                        && MovementUtil.isMoving()
-                        && !this.smoothTelly.getValue()) {
+                if (this.airTicks < 1 && MovementUtil.isMoving()) {
                     if (this.mode.is("Old Telly")) {
                         this.rots.setYaw(mc.player.getYRot());
                     }
@@ -340,17 +307,10 @@ public class Scaffold extends Module {
 
     @EventTarget
     public void onPreMotion(PreMotionEvent event) {
-        this.tickRotationSnapshot = new Rotation(
-                this.rots.getYaw(),
-                this.rots.getPitch()
-        );
         event.setCancelled(true);
-        if (mc.screen != null || mc.player == null || this.currentPlacement == null || this.hitVecSource == null) return;
+        if (mc.screen != null || mc.player == null || this.currentPlacement == null) return;
         if ((this.mode.is("Telly Bridge") || this.mode.is("Old Telly")) && this.airTicks < 1) return;
-
-        BlockPos targetPos = BlockPos.containing(this.hitVecSource.x, this.hitVecSource.y, this.hitVecSource.z);
-        boolean canRayTrace = RayTraceUtil.canRayTrace(RotationHandler.targetRotation, this.currentPlacement.facing, targetPos, false);
-
+        boolean canRayTrace = RayTraceUtil.canRayTrace(RotationHandler.targetRotation, this.currentPlacement.facing, this.currentPlacement.position, false);
         if (!this.canBuildNow && !this.isPlacementReachable(this.currentPlacement)) return;
         if (this.rotationDelay <= 0 && !this.mode.is("Old Telly") && !canRayTrace) return;
         this.doSnap();
@@ -358,7 +318,7 @@ public class Scaffold extends Module {
 
     @EventTarget
     public void onRender(RenderEvent event) {
-        if (this.currentPlacement == null || mc.gameRenderer == null || this.hitVecSource == null) return;
+        if (this.currentPlacement == null || mc.gameRenderer == null) return;
         PoseStack poseStack = event.poseStack();
         Vec3 cameraPos = mc.gameRenderer.getMainCamera().getPosition();
         poseStack.pushPose();
@@ -373,17 +333,6 @@ public class Scaffold extends Module {
         RenderUtil.drawSolidBox(box, poseStack);
         RenderSystem.setShaderColor(color.getRed() / 255.0f, color.getGreen() / 255.0f, color.getBlue() / 255.0f, 0.75f);
         RenderUtil.drawOutlineBox(box, poseStack);
-
-        if(renderAimPoint.getValue()) {
-            Vec3 hitVec = this.hitVecSource;
-            double size = 0.1;
-            double half = size / 2.0;
-            AABB pointBox = new AABB(hitVec.x - half, hitVec.y - half, hitVec.z - half,
-                    hitVec.x + half, hitVec.y + half, hitVec.z + half);
-            RenderSystem.setShaderColor(1.0f, 0.0f, 0.0f, 1.0f);
-            RenderUtil.drawSolidBox(pointBox, poseStack);
-            RenderUtil.drawOutlineBox(pointBox, poseStack);
-        }
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
         RenderSystem.enableDepthTest();
@@ -414,7 +363,8 @@ public class Scaffold extends Module {
         int total = 0;
         for (int i = 0; i < 36; i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
-            if (stack.getItem() instanceof BlockItem && BlockUtil.isPlaceable(stack)) {
+            // 修改：计算背包剩余方块总数时同样剔除蜘蛛网
+            if (stack.getItem() instanceof BlockItem && BlockUtil.isPlaceable(stack) && !stack.is(Items.COBWEB)) {
                 total += stack.getCount();
             }
         }
@@ -422,13 +372,17 @@ public class Scaffold extends Module {
     }
 
     private boolean isPlacementReachable(PlacementTarget target) {
-        if (target == null || mc.player == null || this.hitVecSource == null) return false;
+        if (target == null || mc.player == null) return false;
+        Vec3 blockCenter = new Vec3(target.position.getX() + 0.5, target.position.getY() + 0.5f, target.position.getZ() + 0.5);
+        Vec3 hitPoint = blockCenter.add(new Vec3(
+                target.facing.getNormal().getX() * 0.5,
+                target.facing.getNormal().getY() * 0.5,
+                target.facing.getNormal().getZ() * 0.5));
         Rotation currentTarget = RotationHandler.targetRotation;
         if (currentTarget == null) return false;
         Vec3 eye = mc.player.getEyePosition();
-
-        Vec3 toBlock = this.hitVecSource.subtract(eye);
-        return toBlock.lengthSqr() <= 25.0
+        Vec3 toBlock = hitPoint.subtract(eye);
+        return toBlock.lengthSqr() <= 20.25
                 && toBlock.normalize().dot(Vec3.atLowerCornerOf(target.facing.getNormal().multiply(-1)).normalize()) >= 0.0;
     }
 
@@ -449,10 +403,10 @@ public class Scaffold extends Module {
     }
 
     private Rotation getPlayerYawRotation() {
-        if (mc.player == null || this.currentPlacement == null || this.hitVecSource == null) {
+        if (mc.player == null || this.currentPlacement == null) {
             return new Rotation(0.0f, 0.0f);
         }
-        return RotationUtil.rotationFromVec(this.hitVecSource);
+        return RotationUtil.rotationToBlock(this.currentPlacement.position, 0.0f);
     }
 
     private void applyRotations() {
@@ -466,228 +420,75 @@ public class Scaffold extends Module {
             sim.simulateWithFriction(2);
             eye = new Vec3(eye.x, Math.max(sim.y + mc.player.getEyeHeight(), eye.y), eye.z);
         }
-        if (this.currentPlacement != null && this.hitVecSource != null) {
-            if (this.hitVecSource.distanceToSqr(eye) > 25.0) {
-                this.currentPlacement = null;
-                this.hitVecSource = null;
-            }
-        }
-
         BlockPos belowFeet = BlockPos.containing(eye.x, this.targetYLevel + 0.1f, eye.z);
         int feetX = belowFeet.getX();
         int feetZ = belowFeet.getZ();
         if (mc.level.getBlockState(belowFeet).entityCanStandOn(mc.level, belowFeet, mc.player)) return;
-
-        PlacementCandidate best = null;
-        for (int radius = 0; radius <= 5; radius++) {
-            for (int yOff = 0; yOff <= radius; yOff++) {
-                int xySum = radius - yOff;
-                for (int x = 0; x <= xySum; x++) {
-                    int z = xySum - x;
-                    for (int signX = 0; signX <= (x == 0 ? 0 : 1); signX++) {
-                        for (int signZ = 0; signZ <= (z == 0 ? 0 : 1); signZ++) {
+        if (this.isAbovePlaceable(eye, belowFeet)) return;
+        for (int radius = 1; radius <= 6; radius++) {
+            if (this.isAbovePlaceable(eye, new BlockPos(feetX, this.targetYLevel - radius, feetZ))) return;
+            for (int x = 1; x <= radius; x++) {
+                for (int z = 0; z <= radius - x; z++) {
+                    int yOff = radius - x - z;
+                    for (int signX = 0; signX <= 1; signX++) {
+                        for (int signZ = 0; signZ <= 1; signZ++) {
                             BlockPos test = new BlockPos(
                                     feetX + (signX == 0 ? x : -x),
                                     this.targetYLevel - yOff,
                                     feetZ + (signZ == 0 ? z : -z));
-                            PlacementCandidate candidate = this.evaluatePlacement(eye, test, feetX, feetZ);
-                            if (candidate != null && (best == null || candidate.score() > best.score())) {
-                                best = candidate;
-                            }
+                            if (this.isAbovePlaceable(eye, test)) return;
                         }
                     }
                 }
             }
         }
-        if (best != null) {
-            this.currentPlacement = new PlacementTarget(best.position(), best.facing());
-            this.hitVecSource = getHitVec(best.position(), best.facing());
-        }
     }
 
-    private PlacementCandidate evaluatePlacement(Vec3 from, BlockPos pos, int feetX, int feetZ) {
-        if (mc.level == null || mc.player == null) return null;
-        if (!mc.level.getBlockState(pos).canBeReplaced()) return null;
+    private boolean isAbovePlaceable(Vec3 from, BlockPos pos) {
+        if (mc.level == null || mc.player == null) return false;
+        if (!(mc.level.getBlockState(pos).getBlock() instanceof AirBlock)) return false;
         Vec3 center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5f, pos.getZ() + 0.5);
-        PlacementCandidate best = null;
         for (Direction direction : Direction.values()) {
-            Direction faceDir = direction.getOpposite(); // 支撑方块朝向 pos 的面
             Vec3 offsetCenter = center.add(new Vec3(
                     direction.getNormal().getX() * 0.5,
                     direction.getNormal().getY() * 0.5,
                     direction.getNormal().getZ() * 0.5));
-            BlockPos support = pos.offset(direction.getNormal());
-            if (!mc.level.getBlockState(support).entityCanStandOnFace(mc.level, support, mc.player, faceDir)) continue;
-            Vec3 delta = offsetCenter.subtract(from);
-            if (delta.lengthSqr() > 25.0) continue;
-            double dot = -delta.normalize().dot(Vec3.atLowerCornerOf(faceDir.getNormal()).normalize());
-            if (dot < 0.0) continue;
-            double score = this.scorePlacement(pos, support, direction.getOpposite(), feetX, feetZ, dot);
-            if (best == null || score > best.score()) {
-                best = new PlacementCandidate(
-                        new BlockPos(support.getX(), support.getY(), support.getZ()),
-                        direction.getOpposite(),
-                        score);
+            BlockPos offset = pos.offset(direction.getNormal());
+            if (mc.level.getBlockState(offset).entityCanStandOnFace(mc.level, offset, mc.player, direction)) {
+                Vec3 delta = offsetCenter.subtract(from);
+                if (delta.lengthSqr() <= 20.25
+                        && delta.normalize().dot(Vec3.atLowerCornerOf(direction.getNormal()).normalize()) >= 0.0) {
+                    this.currentPlacement = new PlacementTarget(new BlockPos(offset.getX(), offset.getY(), offset.getZ()), direction.getOpposite());
+                    return true;
+                }
             }
         }
-        return best;
-    }
-
-    private double scorePlacement(BlockPos pos, BlockPos support, Direction facing, int feetX, int feetZ, double dot) {
-        int dx = Math.abs(pos.getX() - feetX);
-        int dz = Math.abs(pos.getZ() - feetZ);
-        int dy = Math.max(0, this.targetYLevel - pos.getY());
-        double score = -(dx + dz + dy) + dot * 0.25;
-        if (support.equals(this.lastPlacedBlock)) {
-            score += 1.5D;
-        }
-        if (facing == Direction.DOWN) {
-            score -= 100D;
-        }
-        return score;
+        return false;
     }
 
     private boolean shouldBuild() {
         if (mc.player == null || mc.level == null) return false;
         BlockPos below = BlockPos.containing(mc.player.getX(), mc.player.getY() - 0.5, mc.player.getZ());
-        return mc.level.getBlockState(below).canBeReplaced() && BlockUtil.isPlaceable(mc.player.getMainHandItem());
-    }
-
-
-    private boolean isValidPlacement(PlacementTarget target) {
-        if (target == null || mc.player == null || this.hitVecSource == null) return false;
-        if (!this.canBuildNow && this.clutch.getValue() && !this.clutchTestMode.getValue()) return true;
-
-        BlockPos targetPos = BlockPos.containing(this.hitVecSource.x, this.hitVecSource.y, this.hitVecSource.z);
-        return RayTraceUtil.canRayTrace(RotationHandler.targetRotation, target.facing, targetPos, false);
-    }
-
-    private PlacementTarget validateAndCorrectPlacement(PlacementTarget target) {
-        if (target == null || mc.player == null || this.hitVecSource == null) return null;
-        if (isValidPlacement(target)) return target;
-
-        BlockPos targetPos = BlockPos.containing(this.hitVecSource.x, this.hitVecSource.y, this.hitVecSource.z);
-        for (Direction dir : Direction.values()) {
-            if (dir == target.facing) continue;
-            if (RayTraceUtil.canRayTrace(RotationHandler.targetRotation, dir, targetPos, false)) {
-                return new PlacementTarget(target.position, dir);
-            }
-        }
-        return null;
+        // 修改：在判断手上拿的物品是否合法时，也加上蜘蛛网检测（防御性代码防止边界情况报错）
+        ItemStack mainHand = mc.player.getMainHandItem();
+        return mc.level.isEmptyBlock(below) && BlockUtil.isPlaceable(mainHand) && !mainHand.is(Items.COBWEB);
     }
 
     private void doSnap() {
         if (this.currentPlacement == null || mc.player == null || mc.gameMode == null) return;
-        PlacementTarget corrected = validateAndCorrectPlacement(this.currentPlacement);
-        if (corrected == null) return;
-        if (!corrected.facing.equals(this.currentPlacement.facing)) {
-            this.currentPlacement = corrected;
-            this.hitVecSource = getHitVec(
-                    corrected.position(),
-                    corrected.facing()
-            );
-        }
-        doSnapInternal();
-    }
-
-    private void doSnapInternal() {
-        if (this.currentPlacement == null || mc.player == null || mc.gameMode == null || this.hitVecSource == null) return;
-        if (this.placeDelayCounter > 0) {
-            this.placeDelayCounter--;
-            return;
-        }
-        this.placeDelayCounter = this.placeDelay.getValue().intValue() - 1;
         if (!BlockUtil.isPlaceable(mc.player.getMainHandItem())) return;
         Direction facing = this.currentPlacement.facing;
-        BlockPos targetBuildPos = this.currentPlacement.position.relative(facing);
-        if (!mc.level.getBlockState(targetBuildPos).canBeReplaced()) {
-            return;
-        }
-
         boolean jumpHeld = InputConstants.isKeyDown(mc.getWindow().getWindow(), mc.options.keyJump.getKey().getValue());
         if (facing == null) return;
         if (facing == Direction.UP && !mc.player.onGround() && MovementUtil.isMoving() && !jumpHeld && !this.mode.is("Normal")) {
             return;
         }
         if (!this.shouldBuild()) return;
-
-        Rotation target = null;
-        boolean needsCorrection = false;
-
-        if (this.mode.is("Telly Bridge")
-                && this.smoothTelly.getValue()
-                && this.hitVecSource != null
-                && this.tickRotationSnapshot != null) {
-
-            target = RotationUtil.rotationFromVec(this.hitVecSource);
-            Rotation sent = this.tickRotationSnapshot;
-
-            needsCorrection =
-                    RotationUtil.angleDiffDouble(target.getYaw(), sent.getYaw()) > 12.0
-                            || Math.abs(target.getPitch() - sent.getPitch()) > 8.0;
-            //ChatUtil.print("yaw diff " + RotationUtil.angleDiffDouble(target.getYaw(), sent.getYaw()) +" pitch diff " + Math.abs(target.getPitch() - sent.getPitch()));
-            if (needsCorrection && !jumpHeld) {
-                this.rots.setYawPitch(target.getYaw(), target.getPitch());
-                this.tickRotationSnapshot.setYawPitch(target.getYaw(), target.getPitch());
-                RotationHandler.setTargetRotation(this.rots);
-                return;
-            }
-        }
-        if (this.interactBeforePlace.getValue()) {
-            PacketUtil.sendPredictive(n -> new ServerboundUseItemPacket(InteractionHand.MAIN_HAND, n));
-        }
-        BlockHitResult hit = new BlockHitResult(this.hitVecSource, facing, this.currentPlacement.position, false);
+        BlockHitResult hit = new BlockHitResult(getHitVec(this.currentPlacement.position, facing), facing, this.currentPlacement.position, false);
         InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
         if (result == InteractionResult.SUCCESS) {
             mc.player.swing(InteractionHand.MAIN_HAND);
-            this.lastPlacedBlock = targetBuildPos;
         }
-
-        if (needsCorrection && jumpHeld) {
-            this.rots.setYawPitch(target.getYaw(), target.getPitch());
-            this.tickRotationSnapshot.setYawPitch(target.getYaw(), target.getPitch());
-            RotationHandler.setTargetRotation(this.rots);
-        }
-
-    }
-
-    private boolean isLookingAtTarget() {
-        if (this.currentPlacement == null || RotationHandler.targetRotation == null || mc.player == null || this.hitVecSource == null) return false;
-
-        Vec3 hitVec = this.hitVecSource;
-        BlockPos targetPos = BlockPos.containing(hitVec.x, hitVec.y, hitVec.z);
-        return RayTraceUtil.canRayTrace(RotationHandler.targetRotation, this.currentPlacement.facing, targetPos, false);
-    }
-
-    private Rotation getOptimalLookRotation() {
-        if (this.currentPlacement == null || mc.player == null || this.hitVecSource == null) return null;
-        return RotationUtil.rotationFromVec(this.hitVecSource);
-    }
-
-    private void adjustLookAtRotation() {
-        if (this.currentPlacement == null || mc.player == null) return;
-        if (!this.shouldBuild()) return;
-        if (this.canBuildNow && this.needsLookAdjustment && this.rots != null) {
-            Rotation optimal = this.getOptimalLookRotation();
-            if (optimal != null) {
-                Rotation smooth = RotationUtil.smoothRotation(this.rots, optimal,
-                        (this.mode.is("Telly Bridge") && this.smoothTelly.getValue())
-                                ? Math.max(8.0, 90.0 / this.rotationTick.getValue().doubleValue())
-                                : 45.0);
-                if (smooth != null) {
-                    this.rots.setYawPitch(smooth.getYaw(), smooth.getPitch());
-                    this.correctRotation.setYawPitch(smooth.getYaw(), smooth.getPitch());
-                }
-            }
-        }
-    }
-
-    private void updateLookAtStatus() {
-        if (this.currentPlacement == null) {
-            this.needsLookAdjustment = false;
-            return;
-        }
-        this.needsLookAdjustment = !this.isLookingAtTarget();
     }
 
     public static boolean isOnBlockEdge(float inflate) {
@@ -700,72 +501,59 @@ public class Scaffold extends Module {
     private Rotation getTargetRotation(boolean firstGround) {
         if (mc.player == null) return null;
         if (!MovementUtil.isInputActive()) return this.getPlayerYawRotation();
-        if (this.currentPlacement == null || this.hitVecSource == null) return new Rotation(mc.player.getYRot(), mc.player.getXRot());
+        if (this.currentPlacement == null) return new Rotation(mc.player.getYRot(), mc.player.getXRot());
 
-        Rotation rotation = RotationUtil.rotationFromVec(this.hitVecSource);
+        Vec3 hitVec = getHitVec(this.currentPlacement.position, this.currentPlacement.facing);
+        Rotation rotation = RotationUtil.rotationFromVec(hitVec);
         double yawDelta = RotationUtil.angleDiffDouble(rotation.getYaw(), RotationHandler.prevRotation.getYaw());
+
+        // 动态 Pitch 计算，不再死锁 75.5，而是在 73 ~ 78 之间动态游走
+        float humanPitch = 75.0f + (float)(Math.sin(mc.player.tickCount * 0.3) * 2.5);
+
         if (this.groundTicks > 0) {
+            // 在地面上时，视角应该是朝前的（恢复跑酷视角）
             if (!mc.options.keyJump.isDown()) {
-                return new Rotation(mc.player.getYRot(), 75.5f);
+                return new Rotation(mc.player.getYRot(), humanPitch);
             }
             switch (this.groundTicks) {
                 case 1:
                     if (!firstGround) {
+                        // 落地瞬间，模拟人手还没来得及把鼠标完全拉回正前方的状态
+                        float clampLimit = 120.0f; // 允许较大偏角，拉回需要时间
                         rotation.setYaw(RotationHandler.prevRotation.getYaw()
-                                + RotationUtil.clampAngle((float) yawDelta, (float) (yawDelta / 2.0)));
-                        rotation.setPitch(75.5f);
+                                + RotationUtil.clampAngle((float) yawDelta, clampLimit));
+                        rotation.setPitch(humanPitch);
                     } else {
-                        rotation = RotationUtil.rotationFromVec(this.hitVecSource);
-
-                        if (this.smoothTelly.getValue()) {
-                            float limit = (float) (
-                                    180.0 / Math.max(
-                                            1.0,
-                                            this.rotationTick.getValue().doubleValue()
-                                    )
-                            );
-
-                            float delta = (float)
-                                    RotationUtil.angleDiffDouble(
-                                            rotation.getYaw(),
-                                            RotationHandler.prevRotation.getYaw()
-                                    );
-
-                            rotation.setYaw(
-                                    RotationHandler.prevRotation.getYaw()
-                                            + RotationUtil.clampAngle(delta, limit)
-                            );
-                        }
+                        rotation = RotationUtil.rotationFromVec(hitVec);
                     }
                     ReflectionUtil.setJumpDelay(2);
                     break;
                 case 2:
-                    return new Rotation(mc.player.getYRot(), 75.5f);
+                    return new Rotation(mc.player.getYRot(), humanPitch);
                 default:
                     break;
             }
         } else {
+            // 在空中：模拟真人甩鼠标 (阻尼器效果)
+            // 刚起跳时转得最快 (90+)，快到目标时减速 (30)，形成 Easing Out 曲线
             float clampLimit;
-
-            if (this.mode.is("Telly Bridge")
-                    && this.smoothTelly.getValue()) {
-
-                clampLimit = (float) (
-                        180.0 / Math.max(
-                                1.0,
-                                this.rotationTick.getValue().doubleValue()
-                        )
-                );
-
+            if (this.airTicks == 1) {
+                clampLimit = 110.0f; // 猛甩鼠标
+            } else if (this.airTicks == 2) {
+                clampLimit = 60.0f;  // 惯性减弱
             } else {
-                clampLimit = this.airTicks == 1 ? 90.0f : 50.0f;
+                clampLimit = 35.0f;  // 微调对准
             }
-            clampLimit -= RandomUtils.nextFloat(0.001f, 0.006f);
+
+            // 加上人手甩鼠标时随机的力度误差
+            clampLimit += RandomUtils.nextFloat(-5.0f, 15.0f);
+
             rotation.setYaw(RotationHandler.prevRotation.getYaw()
                     + RotationUtil.clampAngle((float) yawDelta, clampLimit));
         }
+
         rotation = this.findValidRotation(rotation, firstGround);
-        return this.getSnappedRotation(rotation);
+        return this.getSnappedRotation(rotation); // 传给第一步的 GCD 处理
     }
 
     private Rotation findValidRotation(Rotation rotation, boolean firstGround) {
@@ -777,13 +565,11 @@ public class Scaffold extends Module {
                 : new Rotation(mc.player.getYRot(), mc.player.getXRot()));
         Rotation optimal = this.getOptimalRotation(rotation, reference.getYaw());
         double maxStep = Math.max(45.0, 180.0 / Math.max(1.0, this.rotationTick.getValue().doubleValue()));
-        if (this.mode.is("Telly Bridge")
-                && !this.smoothTelly.getValue()) {
+        if (this.mode.is("Telly Bridge")) {
             maxStep = Math.max(maxStep, 75.0);
         }
         return RotationUtil.smoothRotation(reference, optimal, maxStep);
     }
-
     private Rotation getSnappedRotation(Rotation rotation) {
         if (mc.player == null) return rotation;
         Rotation reference = RotationHandler.prevRotation != null
@@ -791,27 +577,39 @@ public class Scaffold extends Module {
                 : (RotationHandler.targetRotation != null
                 ? RotationHandler.targetRotation
                 : new Rotation(mc.player.getYRot(), mc.player.getXRot()));
-        this.yawDiff = Math.abs(Mth.wrapDegrees(rotation.getYaw() - reference.getYaw()));
-        this.pitchDiff = Math.abs(rotation.getPitch() - reference.getPitch());
-        boolean stuckPitch = this.pitchDiff > 2.0
-                && !Double.isNaN(this.lastPitchDiff)
-                && Math.abs(this.pitchDiff - this.lastPitchDiff) < 1.0e-4;
-        boolean stuckYaw = this.yawDiff > 2.0
-                && !Double.isNaN(this.lastYawDiff)
-                && Math.abs(this.yawDiff - this.lastYawDiff) < 1.0e-4;
-        if (stuckPitch || stuckYaw) {
-            rotation = rotation.clone();
-            float jitterYaw = MathUtil.randomFloat(0.095f, 0.19f);
-            float jitterPitch = MathUtil.randomFloat(0.016f, 0.055f);
-            if ((this.jitterCounter++ & 1) == 0) {jitterYaw = -jitterYaw;}
-            rotation.setYaw(rotation.getYaw() + jitterYaw);
-            rotation.setPitch(Mth.clamp(rotation.getPitch() + jitterPitch, -89.5f, 89.5f));
-            this.yawDiff = Math.abs(Mth.wrapDegrees(rotation.getYaw() - reference.getYaw()));
-            this.pitchDiff = Math.abs(rotation.getPitch() - reference.getPitch());
+
+        // 1. 生成基于时间的平滑波动噪声，取代僵硬的 Jitter (模拟手部轻微抖动)
+        long time = System.currentTimeMillis();
+        float noiseYaw = (float) (Math.sin(time * 0.005) * 0.6 + Math.cos(time * 0.003) * 0.4);
+        float noisePitch = (float) (Math.cos(time * 0.004) * 0.5 + Math.sin(time * 0.006) * 0.5);
+
+        // 模拟甩鼠标时的“惯性偏移” (甩得越快，容差越大)
+        double deltaYaw = Math.abs(rotation.getYaw() - reference.getYaw());
+        if (deltaYaw > 45.0) {
+            noiseYaw += RandomUtils.nextFloat(-1.5f, 1.5f); // 甩枪时的误差补偿
+            noisePitch += RandomUtils.nextFloat(-0.8f, 0.8f);
         }
-        this.lastYawDiff = this.yawDiff;
-        this.lastPitchDiff = this.pitchDiff;
-        return rotation;
+
+        float targetYaw = rotation.getYaw() + noiseYaw;
+        float targetPitch = Mth.clamp(rotation.getPitch() + noisePitch, -89.5f, 89.5f);
+
+        // 2. 核心：模拟 Minecraft 真实的鼠标步进 (GCD)
+        // 这是骗过服务端和录像审查的最关键一步
+        float sens = mc.options.sensitivity().get().floatValue();
+        float f = sens * 0.6F + 0.2F;
+        float gcd = f * f * f * 1.2F; // 1.2 是 Minecraft 原生算法 (8.0 * 0.15) 简化得出
+
+        float diffYaw = targetYaw - reference.getYaw();
+        float diffPitch = targetPitch - reference.getPitch();
+
+        // 将浮点数角度强制对齐到鼠标移动网格上
+        int stepsYaw = Math.round(diffYaw / gcd);
+        int stepsPitch = Math.round(diffPitch / gcd);
+
+        float finalYaw = reference.getYaw() + (stepsYaw * gcd);
+        float finalPitch = reference.getPitch() + (stepsPitch * gcd);
+
+        return new Rotation(finalYaw, Mth.clamp(finalPitch, -89.5f, 89.5f));
     }
 
     private Rotation getOptimalRotation(Rotation rotation, float referenceYaw) {
@@ -843,9 +641,54 @@ public class Scaffold extends Module {
         }
         return new Vec3(x, y, z);
     }
+
+    private PlacementTarget findPlacementTarget(BlockPos origin) {
+        Direction[] directions = {Direction.DOWN, Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH, Direction.UP};
+        PriorityQueue<PlacementCandidate> queue = new PriorityQueue<>(Comparator.comparingDouble(c -> {
+            BlockPos p = c.pos;
+            return Math.abs(p.getX() - origin.getX())
+                    + Math.abs(p.getY() - origin.getY())
+                    + Math.abs(p.getZ() - origin.getZ());
+        }));
+        HashSet<BlockPos> visited = new HashSet<>();
+        queue.offer(new PlacementCandidate(origin, null, 0));
+        visited.add(origin);
+        double maxDistance = 4.5;
+        while (!queue.isEmpty()) {
+            PlacementCandidate candidate = queue.poll();
+            for (Direction direction : directions) {
+                BlockPos neighbor = candidate.pos.relative(direction);
+                if (visited.contains(neighbor)) continue;
+                double distance = Math.abs(neighbor.getX() - origin.getX())
+                        + Math.abs(neighbor.getY() - origin.getY())
+                        + Math.abs(neighbor.getZ() - origin.getZ());
+                if (distance > maxDistance) continue;
+                visited.add(neighbor);
+                if (this.isValidBlock(neighbor)) {
+                    Direction face = direction == Direction.DOWN ? Direction.UP : direction.getOpposite();
+                    if (mc.level.getBlockState(neighbor).entityCanStandOnFace(mc.level, neighbor, mc.player, face)) {
+                        return new PlacementTarget(neighbor, face);
+                    }
+                } else if (candidate.depth < 3) {
+                    queue.offer(new PlacementCandidate(neighbor, direction, candidate.depth + 1));
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isValidBlock(BlockPos pos) {
+        if (mc.level == null || mc.level.isOutsideBuildHeight(pos)) return false;
+        BlockState state = mc.level.getBlockState(pos);
+        if (!BlockUtil.isSolid(state)) return false;
+        if (state.isAir()) return false;
+        if (pos.getY() > this.targetYLevel + 1.0) return false;
+        return !state.getCollisionShape(mc.level, pos).isEmpty();
+    }
+
     private record PlacementTarget(BlockPos position, Direction facing) {
     }
 
-    private record PlacementCandidate(BlockPos position, Direction facing, double score) {
+    private record PlacementCandidate(BlockPos pos, Direction direction, int depth) {
     }
 }
