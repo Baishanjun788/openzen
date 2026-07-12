@@ -102,6 +102,7 @@ public class ModuleManager extends ClientBase {
         this.register(new NameProtect());
         this.register(new NameTags());
         this.register(new NoHurtCam());
+        this.register(new IRC());
         this.register(new OldHitting());
         this.register(new Projectiles());
         this.register(new Watermark());

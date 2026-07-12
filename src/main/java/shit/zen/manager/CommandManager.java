@@ -4,10 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import shit.zen.ZenClient;
 import shit.zen.command.Command;
-import shit.zen.command.impl.BindCommand;
-import shit.zen.command.impl.ConfigCommand;
-import shit.zen.command.impl.LanguageCommand;
-import shit.zen.command.impl.ToggleCommand;
+import shit.zen.command.impl.*;
 import shit.zen.event.impl.ChatEvent;
 import shit.zen.utils.misc.ChatUtil;
 import shit.zen.event.EventTarget;
@@ -25,6 +22,8 @@ public class CommandManager {
         this.registerCommand(new ConfigCommand());
         this.registerCommand(new LanguageCommand());
         this.registerCommand(new ToggleCommand());
+
+        this.registerCommand(new IrcCommand());
     }
 
     private void registerCommand(Command command) {

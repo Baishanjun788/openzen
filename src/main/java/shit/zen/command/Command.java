@@ -5,6 +5,7 @@ import lombok.Generated;
 
 public abstract class Command {
     @Getter
+
     private final String prefix;
     @Getter
     private final String[] aliases;
